@@ -2,17 +2,17 @@
 # Presenter Receiver — one-line installer
 #
 # Install only:
-#   curl -fsSL https://raw.githubusercontent.com/UMC-Hungary/metocast/master/presenter-receiver/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash
 #
 # Install and run immediately:
-#   curl -fsSL https://raw.githubusercontent.com/UMC-Hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws
+#   curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws
 #
 # Install and register as a systemd service (auto-starts on boot):
-#   curl -fsSL https://raw.githubusercontent.com/UMC-Hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws --service
+#   curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws --service
 #
 set -e
 
-REPO="UMC-Hungary/metocast"
+REPO="church-helpers-hungary/metocast"
 DEST="${PRESENTER_INSTALL_DIR:-/usr/local/bin}/presenter-receiver"
 WS_URL="${1:-}"
 INSTALL_SERVICE=false

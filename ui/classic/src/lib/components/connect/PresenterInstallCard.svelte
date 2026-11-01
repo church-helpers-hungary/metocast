@@ -15,7 +15,7 @@
     'linux-arm64': 'presenter-receiver-linux-arm64',
     'macos-arm64': 'presenter-receiver-macos-arm64',
   };
-  const githubRepository = 'UMC-Hungary/metocast';
+  const githubRepository = 'church-helpers-hungary/metocast';
 
   let selectedPlatform = $state<Platform>('linux-arm64');
   let autoStart = $state(false);

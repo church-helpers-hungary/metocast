@@ -48,19 +48,19 @@ The installer script auto-detects the platform, installs required system librari
 **Install only:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UMC-Hungary/metocast/master/presenter-receiver/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash
 ```
 
 **Install and start immediately:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UMC-Hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws
+curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws
 ```
 
 **Install with auto-start on boot** (Linux / systemd only):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/UMC-Hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws --service
+curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws --service
 ```
 
 The install command is also available pre-filled with your server's address on the **Connect** page of the Tauri application.
@@ -82,7 +82,7 @@ The install command is also available pre-filled with your server's address on t
 
 ```bash
 # Replace BINARY with the correct name for your platform (see table above)
-curl -fsSL https://github.com/UMC-Hungary/metocast/releases/latest/download/BINARY -o presenter-receiver
+curl -fsSL https://github.com/church-helpers-hungary/metocast/releases/latest/download/BINARY -o presenter-receiver
 chmod +x presenter-receiver
 ./presenter-receiver ws://YOUR_SERVER_IP:3737/ws
 ```

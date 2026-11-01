@@ -10,7 +10,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/UMC-Hungary/metocast.git"
+		"url": "git+https://github.com/church-helpers-hungary/metocast.git"
 	},
 	"dependencies": {
 		"@companion-module/base": "~1.11.0",

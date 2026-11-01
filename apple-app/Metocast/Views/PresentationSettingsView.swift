@@ -546,7 +546,7 @@ private struct PresenterInstallSection: View {
             .replacingOccurrences(of: "https://", with: "wss://")
             .replacingOccurrences(of: "http://", with: "ws://") + "/ws"
         let service = isAutoStarting ? " --service" : ""
-        return "curl -fsSL https://raw.githubusercontent.com/UMC-Hungary/metocast/master/presenter-receiver/install.sh | bash -s -- \(ws)\(service)"
+        return "curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash -s -- \(ws)\(service)"
     }
 
     var body: some View {

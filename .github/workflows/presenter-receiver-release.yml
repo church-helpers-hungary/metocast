@@ -172,12 +172,12 @@ jobs:
 
             ### One-line install (auto-detects platform)
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/UMC-Hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws
+            curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws
             ```
 
             To install without running immediately:
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/UMC-Hungary/metocast/master/presenter-receiver/install.sh | bash
+            curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash
             ```
           files: |
             artifacts/presenter-receiver-macos-arm64/presenter-receiver-macos-arm64
