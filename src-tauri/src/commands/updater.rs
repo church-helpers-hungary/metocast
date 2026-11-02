@@ -36,7 +36,7 @@ pub async fn check_for_updates(app: AppHandle) -> Result<Option<UpdateInfo>, Str
         UpdateInfo {
             current_version: current,
             release_url: format!(
-                "https://github.com/UMC-Hungary/metocast/releases/tag/v{}",
+                "https://github.com/church-helpers-hungary/metocast/releases/tag/v{}",
                 latest_version
             ),
             latest_version,

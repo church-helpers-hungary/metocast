@@ -5,8 +5,8 @@
 	"description": "Control Broadlink IR/RF devices and presentations through the Metocast application",
 	"version": "2.0.13",
 	"license": "MIT",
-	"repository": "git+https://github.com/UMC-Hungary/metocast.git",
-	"bugs": "https://github.com/UMC-Hungary/metocast/issues",
+	"repository": "git+https://github.com/church-helpers-hungary/metocast.git",
+	"bugs": "https://github.com/church-helpers-hungary/metocast/issues",
 	"maintainers": [
 		{
 			"name": "UMC Hungary",

@@ -56,7 +56,7 @@ macro_rules! repo_asset {
             name: $file,
             version: "f92173c",
             url: concat!(
-                "https://raw.githubusercontent.com/UMC-Hungary/metocast/f92173cff31119cfb0b9b53e6d6db4f400bdefab/crates/metocast-server/assets/",
+                "https://raw.githubusercontent.com/church-helpers-hungary/metocast/f92173cff31119cfb0b9b53e6d6db4f400bdefab/crates/metocast-server/assets/",
                 $folder,
                 "/",
                 $file

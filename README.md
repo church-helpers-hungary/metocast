@@ -751,7 +751,7 @@ See [presenter-receiver/PRESENTER_RECEIVER.md](presenter-receiver/PRESENTER_RECE
 
 ```bash
 # Install
-curl -fsSL https://raw.githubusercontent.com/UMC-Hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws
+curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws
 
 # Or with authentication token
 presenter-receiver ws://192.168.1.10:3737/ws --token YOUR_TOKEN
@@ -835,9 +835,9 @@ pnpm check            # TypeScript + Svelte type checking
 
 ### Plans
 
-Plans for new work are [GitHub issues](https://github.com/UMC-Hungary/metocast/issues), not files
+Plans for new work are [GitHub issues](https://github.com/church-helpers-hungary/metocast/issues), not files
 in the repository: the problem, the approach, the steps and what "done" means, discussed there
 and linked from the pull request that carries the plan out. For example,
-[#33](https://github.com/UMC-Hungary/metocast/issues/33) places dropped live transcripts on a
+[#33](https://github.com/church-helpers-hungary/metocast/issues/33) places dropped live transcripts on a
 program with local Whisper. The `plans/` folder is ignored by git; the older notes some
 sections link to live only on the machines that wrote them.

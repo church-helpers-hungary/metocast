@@ -54,7 +54,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM4ODE5NzU4NDQ4RDBFN0YKUldSL0RvMUVXSmVCeUVCOFU4YTFMblJRUGtEYmR5VktLUytsUlp4WGZzcVJqY2pLZWZrdWYvOEcK",
       "endpoints": [
-        "https://github.com/UMC-Hungary/metocast/releases/latest/download/latest.json"
+        "https://github.com/church-helpers-hungary/metocast/releases/latest/download/latest.json"
       ]
     }
   }
