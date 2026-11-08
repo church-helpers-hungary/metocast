@@ -4885,6 +4885,7 @@ name = "presenter-receiver"
 version = "2.1.0"
 dependencies = [
  "cairo-rs 0.22.9",
+ "chrono",
  "framebuffer",
  "futures-util",
  "minifb",

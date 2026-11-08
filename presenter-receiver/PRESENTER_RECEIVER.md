@@ -187,6 +187,12 @@ The receiver adds `presenter=frames` to the URL it is given (`ws://host:3737/ws?
 { "type": "presenter.status", "svg": true }
 ```
 
+**Acknowledgement** — sent each time a slide reaches the display, with this device's clock as an RFC 3339 timecode. The server logs it while its delivery log is on (`presentation.set_delivery_log`), with the delay since it sent the slide:
+
+```json
+{ "type": "presenter.ack", "slide": 3, "shown_at": "2026-11-08T10:15:02.123Z" }
+```
+
 **Ping reply** — sent in response to every `ping` message from the server:
 
 ```json

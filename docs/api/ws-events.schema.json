@@ -496,6 +496,9 @@
   },
   "presentation.settings": {
     "properties": {
+      "deliveryLog": {
+        "type": "boolean"
+      },
       "presenterTheme": {
         "type": "string"
       },
@@ -509,7 +512,8 @@
     "required": [
       "type",
       "useWebPresenter",
-      "presenterTheme"
+      "presenterTheme",
+      "deliveryLog"
     ],
     "type": "object"
   },

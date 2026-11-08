@@ -18,6 +18,7 @@
     LabelledInput,
     TextArea,
     Button,
+    ToggleRow,
   } from '@metocast/design-system';
   import type { TransportAction, SlideResult, QueueSlot } from '@metocast/design-system';
   import {
@@ -677,6 +678,16 @@
       onchange={setPresenterTheme}
     />
   </div>
+
+  <SectionLabel>{$_('presentations.deliveryLogLabel')}</SectionLabel>
+  <List>
+    <ToggleRow
+      label={$_('presentations.deliveryLog')}
+      sub={$_('presentations.deliveryLogSub')}
+      checked={live.deliveryLog}
+      onchange={(enabled) => sendWsCommand('presentation.set_delivery_log', { enabled })}
+    />
+  </List>
 
   {#if mode === 'web'}
     <SectionLabel>{$_('presentations.presenterSupport')}</SectionLabel>

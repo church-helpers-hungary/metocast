@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { page } from '$app/stores';
   import { connectPresenterWs } from '@metocast/core-client';
   import { WsMessageSchema } from '@metocast/core-client/schemas/ws-messages';
@@ -27,6 +27,21 @@
     }
   }
 
+  /** Tells the server the current slide is on screen (`presenter.ack`) after the next paint. */
+  function ackShown() {
+    void tick().then(() =>
+      requestAnimationFrame(() => {
+        if (standaloneState?.loaded) {
+          send({
+            type: 'presenter.ack',
+            slide: standaloneState.currentSlide,
+            shown_at: new Date().toISOString(),
+          });
+        }
+      }),
+    );
+  }
+
   function connect() {
     // wsPort param lets the presenter page connect to the API server even when
     // the frontend is served from a different port (e.g. Vite dev server).
@@ -40,6 +55,7 @@
         const msg = result.data;
         if (msg.type === 'presenter.state') {
           standaloneState = msg.state;
+          ackShown();
         } else if (msg.type === 'presentation.settings') {
           presenterTheme = msg.presenterTheme;
         } else if (msg.type === 'presenter.slide_changed') {
@@ -49,6 +65,7 @@
               currentSlide: msg.currentSlide,
               totalSlides: msg.totalSlides,
             };
+            ackShown();
           }
         } else if (msg.type === 'order.state') {
           orderPosition = msg.position;

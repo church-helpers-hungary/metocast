@@ -93,6 +93,7 @@ export const PresentationSettingsMessageSchema = z.object({
 	type: z.literal('presentation.settings'),
 	useWebPresenter: z.boolean(),
 	presenterTheme: z.enum(['classic', 'editorial']).default('classic'),
+	deliveryLog: z.boolean().default(false),
 })
 
 /** `order.state`: the Order of Service step on screen, with its event's steps. */

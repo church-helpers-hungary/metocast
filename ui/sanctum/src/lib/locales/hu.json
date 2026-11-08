@@ -246,6 +246,9 @@
       "web": "Webes megjelenítő",
       "keynote": "Keynote híd"
     },
+    "deliveryLogLabel": "Kézbesítési napló",
+    "deliveryLog": "Diák kézbesítésének naplózása",
+    "deliveryLogSub": "Minden képernyőre küldött diát, és azt, hogy a képernyő mikor mutatta, az alkalmazás naplójába írja. A késő képernyő megtalálásához.",
     "themeLabel": "Vetítési megjelenés",
     "fontsTitle": "PowerPoint betűtípusok",
     "fontsNames": "Cormorant Garamond + Geist Mono",

@@ -61,6 +61,8 @@ final class MetocastSession {
     // Slides. The server decides whether a presentation opens in the web presenter or Keynote.
     private(set) var usesWebPresenter = true
     private(set) var presenterTheme: PresenterTheme = .classic
+    /// The server logs each slide sent to every screen and each screen's acknowledgement.
+    private(set) var deliveryLog = false
     private(set) var presentationStatus: PresentationStatus?
     /// The Order of Service step on screen, as (event id, step id), on every client alike.
     private(set) var orderPosition: (eventId: String, itemId: String)?
@@ -656,9 +658,11 @@ final class MetocastSession {
         case .event(.presenterState(let state)):
             presenter = state
             loadingDeckPath = nil
+            acknowledgeSlide()
         case .event(.presenterSlideChanged(let current, let total)):
             presenter?.currentSlide = current
             presenter?.totalSlides = total
+            acknowledgeSlide()
         case .event(.eventChanged):
             Task { await refresh() }
         case .event(.orderState(let eventId, let itemId)):
@@ -783,9 +787,10 @@ final class MetocastSession {
             programJobs[progress.jobId] = progress
             let file = URL(fileURLWithPath: progress.outputPath).lastPathComponent
             mediaJob(progress.jobId, movedFrom: known?.state, to: progress.state, finished: ActivityItem(icon: "film.stack", title: String(localized: "Video with audio ready: \(file)")), failed: String(localized: "Video with audio failed: \(file)"), error: progress.error)
-        case .event(.presentationSettings(let useWebPresenter, let theme)):
+        case .event(.presentationSettings(let useWebPresenter, let theme, let deliveryLog)):
             usesWebPresenter = useWebPresenter
             presenterTheme = theme
+            self.deliveryLog = deliveryLog
         case .event(.presentationStatus(let status)):
             presentationStatus = status
             loadingDeckPath = nil
@@ -810,6 +815,13 @@ final class MetocastSession {
         case .event(.connected), .event(.event), .event(.unknown):
             break
         }
+    }
+
+    /// Tells the server this device has the slide now, with this device's clock, for its delivery log.
+    private func acknowledgeSlide() {
+        guard let presenter, presenter.loaded else { return }
+        let shownAt = Date.now.formatted(.iso8601.year().month().day().time(includingFractionalSeconds: true))
+        show(.ack(slide: presenter.currentSlide, shownAt: shownAt))
     }
 
     private func apply(_ state: AppleConnectionState) {

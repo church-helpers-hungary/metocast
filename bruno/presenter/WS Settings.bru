@@ -10,6 +10,8 @@ meta {
 # { "type": "presentation.get_settings" }
 # Select the shared song/Bible text design:
 # { "type": "presentation.set_presenter_theme", "theme": "editorial" }
+# Log slide deliveries and screen acknowledgements:
+# { "type": "presentation.set_delivery_log", "enabled": true }
 
 get {
   url: {{baseUrl}}/ws
@@ -32,12 +34,25 @@ docs {
 
   `theme` is `"classic"` or `"editorial"`. The setting is persisted by the core and applies to imported text/song decks and generated Bible slides. SVG mode keeps the source deck's own design.
 
+  **Log slide deliveries:**
+  ```json
+  { "type": "presentation.set_delivery_log", "enabled": true }
+  ```
+
+  While on, the server's application log gets one `presenter_delivery` line per
+  `presenter.state` / `presenter.slide_changed` written to each screen (client, bytes,
+  `queued_ms`, `write_ms`, `dropped`) and one per `presenter.ack` a screen sends back
+  (`slide`, the screen's `shown_at` timecode, `since_queued_ms`, `since_written_ms`).
+  Screens send `{ "type": "presenter.ack", "slide": 3, "shown_at": "2026-11-08T10:15:02.123Z" }`
+  after showing a slide.
+
   **Response and broadcast:**
   ```json
   {
     "type": "presentation.settings",
     "useWebPresenter": true,
-    "presenterTheme": "editorial"
+    "presenterTheme": "editorial",
+    "deliveryLog": false
   }
   ```
 }

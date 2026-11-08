@@ -10,6 +10,8 @@
 
 use axum::extract::ws::Message;
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Instant;
 use tokio::sync::mpsc;
 
 /// What a queued message is, so the writer knows which ones a newer deck replaces.
@@ -28,6 +30,15 @@ pub enum OutgoingKind {
 pub struct Outgoing {
     pub message: Message,
     pub kind: OutgoingKind,
+    pub queued_at: Instant,
+}
+
+/// When the last presenter message the writer sent this client was queued and written: what a
+/// `presenter.ack` is measured against, on the server's own clock.
+#[derive(Debug, Clone, Copy)]
+pub struct Delivered {
+    pub queued_at: Instant,
+    pub written_at: Instant,
 }
 
 /// The sending side of a client's queue. Cheap to clone.
@@ -35,6 +46,7 @@ pub struct Outgoing {
 pub struct ClientTx {
     tx: mpsc::UnboundedSender<Outgoing>,
     presenter_frames: bool,
+    delivered: Arc<Mutex<Option<Delivered>>>,
 }
 
 impl ClientTx {
@@ -47,6 +59,7 @@ impl ClientTx {
             Self {
                 tx,
                 presenter_frames,
+                delivered: Arc::default(),
             },
             rx,
         )
@@ -63,48 +76,70 @@ impl ClientTx {
         message: Message,
         kind: OutgoingKind,
     ) -> Result<(), mpsc::error::SendError<Outgoing>> {
-        self.tx.send(Outgoing { message, kind })
+        self.tx.send(Outgoing {
+            message,
+            kind,
+            queued_at: Instant::now(),
+        })
     }
 
     /// True for a client that draws SVG slides from `presenter.frame` and gets them left out.
     pub fn presenter_frames(&self) -> bool {
         self.presenter_frames
     }
+
+    /// The last presenter message the writer sent this client.
+    pub fn delivered(&self) -> Option<Delivered> {
+        *self
+            .delivered
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Records a presenter message the writer just sent.
+    pub fn set_delivered(&self, delivered: Delivered) {
+        *self
+            .delivered
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(delivered);
+    }
 }
 
 /// Drops every presenter message that the last queued `presenter.state` replaces: the earlier
 /// decks, and the slide changes that moved within them. The last state carries its own current
-/// slide, and slide changes queued after it stay, in order.
-pub fn coalesce(pending: &mut VecDeque<Outgoing>) {
+/// slide, and slide changes queued after it stay, in order. Returns how many it dropped.
+pub fn coalesce(pending: &mut VecDeque<Outgoing>) -> usize {
     let Some(last_state) = pending
         .iter()
         .rposition(|item| item.kind == OutgoingKind::PresenterState)
     else {
-        return;
+        return 0;
     };
+    let before = pending.len();
     let mut index = 0;
     pending.retain(|item| {
         let keep = index >= last_state || item.kind == OutgoingKind::Other;
         index += 1;
         keep
     });
+    before - pending.len()
 }
 
 /// Takes what is queued for the socket next: waits for one message when nothing is pending,
-/// then moves in everything else already queued and coalesces it. None once the queue closed
-/// and nothing is left.
+/// then moves in everything else already queued and coalesces it, with how many presenter
+/// messages that dropped. None once the queue closed and nothing is left.
 pub async fn next(
     rx: &mut mpsc::UnboundedReceiver<Outgoing>,
     pending: &mut VecDeque<Outgoing>,
-) -> Option<Message> {
+) -> Option<(Outgoing, usize)> {
     if pending.is_empty() {
         pending.push_back(rx.recv().await?);
     }
     while let Ok(item) = rx.try_recv() {
         pending.push_back(item);
     }
-    coalesce(pending);
-    pending.pop_front().map(|item| item.message)
+    let dropped = coalesce(pending);
+    pending.pop_front().map(|item| (item, dropped))
 }
 
 #[cfg(test)]
@@ -115,6 +150,7 @@ mod tests {
         Outgoing {
             message: Message::Text(text.to_owned().into()),
             kind,
+            queued_at: Instant::now(),
         }
     }
 
@@ -142,7 +178,7 @@ mod tests {
             item("clients", Other),
         ]
         .into();
-        coalesce(&mut pending);
+        assert_eq!(coalesce(&mut pending), 2, "deck A and its slide change");
         assert_eq!(
             texts(&pending),
             [
@@ -165,7 +201,7 @@ mod tests {
             item("ping", Other),
         ]
         .into();
-        coalesce(&mut pending);
+        assert_eq!(coalesce(&mut pending), 0);
         assert_eq!(texts(&pending), ["slide 2", "slide 3", "ping"]);
     }
 
@@ -176,9 +212,10 @@ mod tests {
         tx.send_kind(Message::Text("deck 1".into()), OutgoingKind::PresenterState)
             .expect("queue open");
         // The writer takes deck 1 and is busy sending it while three more steps happen.
+        let (first, dropped) = next(&mut rx, &mut pending).await.expect("deck 1");
         assert_eq!(
-            next(&mut rx, &mut pending).await,
-            Some(Message::Text("deck 1".into()))
+            (first.message, dropped),
+            (Message::Text("deck 1".into()), 0)
         );
         for deck in ["deck 2", "deck 3", "deck 4"] {
             tx.send_kind(Message::Text(deck.into()), OutgoingKind::PresenterState)
@@ -192,9 +229,12 @@ mod tests {
         tx.send(Message::Text("pong".into())).expect("queue open");
         drop(tx);
         let mut sent = Vec::new();
-        while let Some(message) = next(&mut rx, &mut pending).await {
-            sent.push(message);
+        let mut dropped = 0;
+        while let Some((item, count)) = next(&mut rx, &mut pending).await {
+            sent.push(item.message);
+            dropped += count;
         }
+        assert_eq!(dropped, 2, "decks 2 and 3");
         assert_eq!(
             sent,
             [

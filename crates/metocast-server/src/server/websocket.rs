@@ -487,6 +487,9 @@ enum WsCommand {
     /// SVG slide `slide` (1-based) drawn for a `width`×`height` screen. Replies with one binary message holding the JPEG, for screens too slow to draw the SVG, such as the Raspberry Pi receiver.
     #[serde(rename = "presenter.frame")]
     PresenterFrame { slide: u32, width: u32, height: u32 },
+    /// A screen showing slide `slide` (1-based) since `shown_at`, its own clock as an RFC 3339 timecode. No reply; logged with the delay since the server sent the slide while `presentation.set_delivery_log` is on.
+    #[serde(rename = "presenter.ack")]
+    PresenterAck { slide: u32, shown_at: String },
     /// Blank the web presenter's screen.
     #[serde(rename = "presenter.mute")]
     PresenterMute,
@@ -515,6 +518,9 @@ enum WsCommand {
         #[schemars(with = "String")]
         theme: presenter::PresenterTheme,
     },
+    /// Log every presenter message sent to each screen, and each screen's `presenter.ack`, in the server's application log (target `presenter_delivery`). Answered by `presentation.settings`, broadcast.
+    #[serde(rename = "presentation.set_delivery_log")]
+    PresentationSetDeliveryLog { enabled: bool },
     /// Open a file: routes to web presenter or Keynote based on the stored setting.
     #[serde(rename = "presentation.open")]
     PresentationOpen {
@@ -613,6 +619,7 @@ async fn make_presentation_settings(state: &AppState) -> String {
         "type": "presentation.settings",
         "useWebPresenter": enabled,
         "presenterTheme": presenter_theme,
+        "deliveryLog": state.presenter_delivery_log.load(Ordering::Relaxed),
     })
     .to_string()
 }
@@ -938,6 +945,12 @@ mod tests {
         assert!(matches!(
             parsed(r#"{"type":"presenter.status","svg":true}"#),
             WsCommand::PresenterStatus { svg: true }
+        ));
+        assert!(matches!(
+            parsed(
+                r#"{"type":"presenter.ack","slide":3,"shown_at":"2026-11-08T10:15:02.123+01:00"}"#
+            ),
+            WsCommand::PresenterAck { slide: 3, .. }
         ));
     }
 
@@ -1584,6 +1597,48 @@ async fn handle_ws_command(
             let clients = state.ws_clients.read().await;
             for tx in clients.values() {
                 tx.send(Message::Text(msg.clone().into())).log_gone();
+            }
+        }
+        WsCommand::PresentationSetDeliveryLog { enabled } => {
+            if let Err(error) = sqlx::query(
+                "INSERT INTO app_settings (key, value) VALUES ('presenter_delivery_log', $1) \
+                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
+            )
+            .bind(enabled.to_string())
+            .execute(&state.pool)
+            .await
+            {
+                ws_error(
+                    client_tx,
+                    &format!("Could not save the delivery log setting: {error}"),
+                );
+                return;
+            }
+            state
+                .presenter_delivery_log
+                .store(enabled, Ordering::Relaxed);
+            tracing::info!(target: "presenter_delivery", enabled, "presenter delivery log switched");
+            let msg = make_presentation_settings(state).await;
+            let clients = state.ws_clients.read().await;
+            for tx in clients.values() {
+                tx.send(Message::Text(msg.clone().into())).log_gone();
+            }
+        }
+        WsCommand::PresenterAck { slide, shown_at } => {
+            if state.presenter_delivery_log.load(Ordering::Relaxed) {
+                let delivered = client_tx.delivered();
+                let since = |at: std::time::Instant| at.elapsed().as_millis() as u64;
+                let client = client_name(state, client_id).await;
+                tracing::info!(
+                    target: "presenter_delivery",
+                    client,
+                    %client_id,
+                    slide,
+                    shown_at,
+                    since_queued_ms = delivered.map(|d| since(d.queued_at)),
+                    since_written_ms = delivered.map(|d| since(d.written_at)),
+                    "presenter slide acknowledged"
+                );
             }
         }
         WsCommand::PresentationOpen {
@@ -3587,6 +3642,7 @@ const READONLY_ALLOWED: &[&str] = &[
     "presenter.register",
     "presenter.status",
     "presenter.frame",
+    "presenter.ack",
     "order.status",
     "pong",
 ];
@@ -3761,17 +3817,47 @@ async fn handle_socket(
 
     let (mut ws_sink, mut ws_stream) = socket.split();
 
+    let writer_state = state.clone();
+    let writer_tx = tx.clone();
     let send_task = tokio::spawn(async move {
         let mut pending = std::collections::VecDeque::new();
-        while let Some(msg) = ws_client::next(&mut rx, &mut pending).await {
-            let msg = match msg {
+        while let Some((item, dropped)) = ws_client::next(&mut rx, &mut pending).await {
+            let msg = match item.message {
                 Message::Text(text) if super::redact::enabled() => {
                     Message::Text(super::redact::apply(&text).into_owned().into())
                 }
                 other => other,
             };
+            let bytes = match &msg {
+                Message::Text(text) => text.len(),
+                Message::Binary(data) => data.len(),
+                _ => 0,
+            };
+            let started = std::time::Instant::now();
             if ws_sink.send(msg).await.is_err() {
                 break;
+            }
+            if item.kind == OutgoingKind::Other {
+                continue;
+            }
+            let written_at = std::time::Instant::now();
+            writer_tx.set_delivered(ws_client::Delivered {
+                queued_at: item.queued_at,
+                written_at,
+            });
+            if writer_state.presenter_delivery_log.load(Ordering::Relaxed) {
+                let client = client_name(&writer_state, client_id).await;
+                tracing::info!(
+                    target: "presenter_delivery",
+                    client,
+                    %client_id,
+                    kind = ?item.kind,
+                    bytes,
+                    queued_ms = started.duration_since(item.queued_at).as_millis() as u64,
+                    write_ms = written_at.duration_since(started).as_millis() as u64,
+                    dropped,
+                    "presenter message sent"
+                );
             }
         }
     });
@@ -3946,6 +4032,19 @@ fn press_recorders(state: &AppState, client_tx: &ClientTx, recording: bool) {
     tokio::spawn(async move {
         reply(&client_tx, crate::recorders::press(&state, recording).await);
     });
+}
+
+/// `label (hostname)` of a connected client, for the delivery log.
+async fn client_name(state: &AppState, client_id: Uuid) -> String {
+    match state.ws_client_info.read().await.get(&client_id) {
+        Some(WsClientInfo {
+            label,
+            hostname: Some(hostname),
+            ..
+        }) => format!("{label} ({hostname})"),
+        Some(info) => info.label.clone(),
+        None => "gone".to_string(),
+    }
 }
 
 /// The `presenter.state` message, with each SVG slide's `svg` left empty when `svg_omitted`.

@@ -98,12 +98,14 @@ Connect to `ws://<host>/ws?token=<token>`. Send `{"type": "<command>", …fields
 | `presentation.next` | — | — |
 | `presentation.open` | `file_path`*, `render_mode` | — |
 | `presentation.prev` | — | — |
+| `presentation.set_delivery_log` | `enabled`* | — |
 | `presentation.set_presenter_theme` | `theme`* | — |
 | `presentation.set_use_web_presenter` | `enabled`* | — |
 | `presentation.start` | — | — |
 | `presentation.status` | — | — |
 | `presentation.stop` | — | — |
 | `presentation.unmute` | — | — |
+| `presenter.ack` | `shown_at`*, `slide`* | — |
 | `presenter.first` | — | — |
 | `presenter.goto` | `slide`* | — |
 | `presenter.last` | — | — |
@@ -167,7 +169,7 @@ Connect to `ws://<host>/ws?token=<token>`. Send `{"type": "<command>", …fields
 | `ppt.folders_changed` | The slide folders list changed | none |
 | `ppt.index.state` | The slide library index started or finished parsing decks; also sent on connect | `indexing` boolean, `pending` integer |
 | `ppt.search_results` | Reply to `ppt.search` | `files` array, `filter` string |
-| `presentation.settings` | Reply to `presentation.get_settings`, and sent on change | `useWebPresenter` boolean, `presenterTheme` string |
+| `presentation.settings` | Reply to `presentation.get_settings`, and sent on change | `useWebPresenter` boolean, `presenterTheme` string, `deliveryLog` boolean |
 | `presenter.slide_changed` | The presenter moved to another slide | `currentSlide` integer?, `totalSlides` integer? |
 | `presenter.state` | The full web-presenter state. `svgOmitted` is true for a client connected with `/ws?presenter=frames`: each `svgSlides[].svg` is empty and the slides come from `presenter.frame` | `state` object, `svgOmitted` boolean |
 | `queue.stats` | Job queue counters; sent while any client is connected | `queues` array |

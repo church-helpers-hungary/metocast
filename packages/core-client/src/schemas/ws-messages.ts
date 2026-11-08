@@ -428,6 +428,8 @@ export const WsMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('presentation.settings'),
     useWebPresenter: z.boolean(),
     presenterTheme: PresenterThemeSchema.default('classic'),
+    /** Each screen's deliveries and `presenter.ack`s go to the server's log. */
+    deliveryLog: z.boolean().default(false),
   }),
   // ── Presenter (push + command responses) ───────────────────────────────────
   z.object({

@@ -442,7 +442,7 @@ impl Screen<'_> {
         let slide = self.state.current_slide;
         let ask_server = self.frames.should_ask(slide);
         match self.render(ask_server)? {
-            Shown::Done => {}
+            Shown::Done => self.ack(write).await?,
             Shown::AskServer => {
                 write
                     .send(Message::Text(
@@ -465,9 +465,22 @@ impl Screen<'_> {
     /// Draws the current slide here, this once, asking for the SVGs first when the server left
     /// them out.
     async fn draw_here(&mut self, write: &mut Sink) -> WsResult<()> {
-        if self.render(false)? == Shown::NeedSvg {
-            self.ask_for_svg(write).await?;
+        match self.render(false)? {
+            Shown::NeedSvg => self.ask_for_svg(write).await,
+            _ => self.ack(write).await,
         }
+    }
+
+    /// Tells the server the current slide is on the display now (`presenter.ack`), with this
+    /// device's clock as the timecode, for the server's delivery log.
+    async fn ack(&self, write: &mut Sink) -> WsResult<()> {
+        let shown_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        write
+            .send(Message::Text(
+                json!({"type": "presenter.ack", "slide": self.state.current_slide, "shown_at": shown_at})
+                    .to_string(),
+            ))
+            .await?;
         Ok(())
     }
 

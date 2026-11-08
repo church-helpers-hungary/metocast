@@ -604,6 +604,9 @@ pub enum PresentationCommand {
     SetPresenterTheme {
         theme: PresenterTheme,
     },
+    SetDeliveryLog {
+        enabled: bool,
+    },
     Next,
     Previous,
     First,
@@ -626,6 +629,10 @@ pub enum PresentationCommand {
     Register {
         label: String,
         hostname: Option<String>,
+    },
+    Ack {
+        slide: u32,
+        shown_at: String,
     },
     ClientsList,
     ClientsPing {
@@ -1366,6 +1373,7 @@ pub enum AppleEvent {
     PresentationSettings {
         use_web_presenter: bool,
         theme: PresenterTheme,
+        delivery_log: bool,
     },
     PresentationStatus {
         status: PresentationStatus,
@@ -3189,9 +3197,11 @@ impl From<ServerEvent> for AppleEvent {
             ServerEvent::PresentationSettings {
                 use_web_presenter,
                 presenter_theme,
+                delivery_log,
             } => Self::PresentationSettings {
                 use_web_presenter,
                 theme: presenter_theme,
+                delivery_log,
             },
             ServerEvent::PresentationStatus { status } => Self::PresentationStatus { status },
             ServerEvent::ClientsList { clients } | ServerEvent::ClientsUpdated { clients } => {
