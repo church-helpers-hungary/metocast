@@ -12,11 +12,15 @@ them. Each step is one of five kinds:
   finds no verses is refused when you save.
 - **Announcements**: _Hirdetések_. You type the announcements into the step, one per
   line, and the server turns them into slides: the title, then the bullet points, five to a slide.
+  A long bullet is broken onto several lines of at most 34 characters, at a comma or other
+  punctuation where one fits, or else between words, so it reads at full size instead of
+  shrinking the slide; it still counts as one of the five.
   Like a song, they open in the web presenter, or, in Keynote mode, as `hirdetesek.pptx` in the
   Bible slides folder (a temporary folder when none is set). An announcements step with no
   bullets yet shows its title alone.
 - **Slide**: one slide of its own, such as the welcome: its title, and under it optional
-  paragraphs, one per line, typed into the step. With the web presenter it shows as the
+  paragraphs, one per line, typed into the step. Long paragraphs are broken onto lines the same
+  way as long announcements. With the web presenter it shows as the
   [welcome screen](welcome-screen.md) (photo, logo, readable text); in Keynote mode it opens as a
   plain `szoveg.pptx`.
 - **Block**: a part with no slides, such as _Köszöntés, imádság_ or _Igehirdetés_ (the speaker goes
@@ -27,7 +31,9 @@ During the service the operator steps through the list:
 - a song opens its deck in the web presenter or Keynote;
 - a reading loads the event's verses, bookended like a song: a title slide with the reading's name
   and reference (_Lekció — Jn 3:16-17_), then the verse pages, then a blank closing slide. The
-  counter on each verse page (_1/3_) counts verse pages only;
+  counter on each verse page (_1/3_) counts verse pages only. A verse page holds at most 35 words
+  (whole verses where they fit; a longer verse is split across pages), so the text stays large
+  enough to read from the back;
 - the announcements show their bullet points as slides, and a slide step its slide;
 - a block leaves the screen as it is.
 

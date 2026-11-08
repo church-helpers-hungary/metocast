@@ -9,7 +9,8 @@ use crate::server::AppState;
 #[path = "presenter_svg.rs"]
 pub(crate) mod presenter_svg;
 
-const MAX_BIBLE_WORDS_PER_SLIDE: usize = 55;
+/// About five lines at 38 pt: more than this and the reading is too dense to follow from the pews.
+const MAX_BIBLE_WORDS_PER_SLIDE: usize = 35;
 const BIBLE_MAIN_FONT_SIZE_PT: f32 = 38.0;
 const BIBLE_COUNTER_FONT_SIZE_PT: f32 = 18.0;
 const SONG_FONT_SIZE_PT: f32 = 48.0;
@@ -18,6 +19,7 @@ const SONG_TITLE_FONT_SIZE_PT: f32 = 60.0;
 const SONG_LINE_CHARS: usize = 34;
 /// Past this, a line is a paragraph: it stays whole and wraps inside the slide.
 const SONG_PARAGRAPH_CHARS: usize = 150;
+/// Counts bullets, not the lines a long bullet wraps onto.
 const ANNOUNCEMENTS_PER_SLIDE: usize = 5;
 
 // ── Data types ────────────────────────────────────────────────────────────────
@@ -654,7 +656,7 @@ impl PresenterState {
                     paragraphs: vec![
                         heading(1),
                         ParagraphContent {
-                            lines: page.to_vec(),
+                            lines: page.iter().flat_map(|bullet| break_line(bullet)).collect(),
                             align: "left".to_string(),
                             font_size_pt: BIBLE_MAIN_FONT_SIZE_PT,
                         },
@@ -688,7 +690,7 @@ impl PresenterState {
             .lines()
             .map(str::trim)
             .filter(|line| !line.is_empty())
-            .map(str::to_string)
+            .flat_map(break_line)
             .collect();
         if !lines.is_empty() {
             paragraphs.push(ParagraphContent {
@@ -887,6 +889,14 @@ fn split_song_line(line: &str) -> Vec<String> {
     if line.chars().count() > SONG_PARAGRAPH_CHARS {
         return vec![line];
     }
+    break_line(&line)
+}
+
+/// Breaks text into lines of at most `SONG_LINE_CHARS`, at the last punctuation that fits, or else
+/// the last space; a word too long to break stays whole. Renderers never wrap a line, so generated
+/// prose (announcements, the welcome) is broken here however long it is.
+fn break_line(line: &str) -> Vec<String> {
+    let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut parts = Vec::new();
     let mut rest = line.as_str();
     while rest.chars().count() > SONG_LINE_CHARS {
@@ -1310,6 +1320,49 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    #[test]
+    fn long_announcement_bullets_wrap_into_short_lines() {
+        let bullet = "Jövő vasárnap a gyülekezeti kiránduláson, a hegyen, közös ebéd lesz; mindenkit szeretettel várunk, a jelentkezéseket a lelkészi hivatalban fogadjuk, hétfőtől péntekig, délelőtt kilenc és tizenkét óra között";
+        let notes = format!("{bullet}\nKonfirmáció\nTemetés\nPresbiteri gyűlés\nBibliaóra");
+        let deck = PresenterState::from_announcements("Hirdetések", &notes);
+        assert_eq!(deck.total_slides, 1, "a wrapped bullet still counts once");
+        let lines = &deck.slides[0].paragraphs[1].lines;
+        assert!(lines.len() > 5 + 2, "{lines:?}");
+        assert!(lines[0].starts_with("• Jövő"));
+        assert!(
+            lines
+                .iter()
+                .all(|line| line.chars().count() <= SONG_LINE_CHARS),
+            "{lines:?}"
+        );
+        assert_eq!(
+            lines.join(" "),
+            format!("• {bullet} • Konfirmáció • Temetés • Presbiteri gyűlés • Bibliaóra")
+        );
+
+        let welcome = PresenterState::from_text("Köszöntjük!", bullet);
+        assert!(
+            welcome.slides[0].paragraphs[1]
+                .lines
+                .iter()
+                .all(|line| line.chars().count() <= SONG_LINE_CHARS)
+        );
+    }
+
+    #[test]
+    fn a_long_reading_takes_more_slides_than_it_used_to() {
+        let ten_words = "egy kettő három négy öt hat hét nyolc kilenc tíz";
+        let reading = || {
+            (1..=7)
+                .map(|number| verse(5, number, ten_words))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(paginate_bible_verses(reading(), 55).len(), 2);
+        let pages = paginate_bible_verses(reading(), MAX_BIBLE_WORDS_PER_SLIDE);
+        assert_eq!(pages.len(), 3);
+        assert_eq!(format_bible_page_range(&pages[0]), "5:1-3");
     }
 
     #[test]
