@@ -2,10 +2,11 @@
   import { presenterInstallCommand } from '@metocast/core-client';
   import { serverUrl, localNetworkUrl } from '$lib/stores/server-url.js';
 
-  type Platform = 'linux-x86_64' | 'linux-arm64' | 'macos-arm64';
+  type Platform = 'linux-x86_64' | 'linux-arm64' | 'linux-armv7' | 'macos-arm64';
 
   const platforms: { id: Platform; label: string }[] = [
-    { id: 'linux-arm64', label: 'Linux ARM64 (RPi)' },
+    { id: 'linux-arm64', label: 'Raspberry Pi (64-bit OS)' },
+    { id: 'linux-armv7', label: 'Raspberry Pi (32-bit OS)' },
     { id: 'linux-x86_64', label: 'Linux (x86_64)' },
     { id: 'macos-arm64', label: 'macOS (Apple Silicon)' },
   ];
@@ -13,6 +14,7 @@
   const binaryName: Record<Platform, string> = {
     'linux-x86_64': 'presenter-receiver-linux-x86_64',
     'linux-arm64': 'presenter-receiver-linux-arm64',
+    'linux-armv7': 'presenter-receiver-linux-armv7',
     'macos-arm64': 'presenter-receiver-macos-arm64',
   };
   const githubRepository = 'church-helpers-hungary/metocast';
@@ -56,8 +58,8 @@
 
   <h3>One-line install</h3>
   <p class="note">
-    Auto-detects platform (Linux arm64/x86_64, macOS arm64). Downloads the binary, installs
-    system dependencies if needed, and starts immediately.
+    Auto-detects platform (Raspberry Pi 32- or 64-bit, Linux x86_64, macOS arm64). Downloads the
+    newest receiver, installs system dependencies if needed, and starts immediately.
   </p>
 
   <label class="autostart-toggle">
@@ -68,8 +70,9 @@
   {#if autoStart}
     <p class="autostart-note">
       Sets up getty auto-login for the current user and adds a restart loop to
-      <code>~/.bash_profile</code>. The presenter launches on boot with no login prompt. To update
-      the server URL later, re-run this command with the new address.
+      <code>~/.bash_profile</code>. The presenter launches on boot with no login prompt and updates
+      itself to the newest release before each start. To change the server URL later, re-run this
+      command with the new address.
     </p>
   {/if}
 

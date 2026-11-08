@@ -6,12 +6,12 @@ A standalone binary that connects to the Metocast server over WebSocket and rend
 
 ## Supported platforms
 
-| Platform                                                 | Binary                            |
-| -------------------------------------------------------- | --------------------------------- |
-| Linux arm64, 64-bit OS (Raspberry Pi 3/4/5)              | `presenter-receiver-linux-arm64`  |
-| Linux armhf (armv7), 32-bit OS (Raspberry Pi 2/3/4/5)    | `presenter-receiver-linux-armv7`  |
-| Linux x86_64                                             | `presenter-receiver-linux-x86_64` |
-| macOS Apple Silicon                                      | `presenter-receiver-macos-arm64`  |
+| Platform                                              | Binary                            |
+| ----------------------------------------------------- | --------------------------------- |
+| Linux arm64, 64-bit OS (Raspberry Pi 3/4/5)           | `presenter-receiver-linux-arm64`  |
+| Linux armhf (armv7), 32-bit OS (Raspberry Pi 2/3/4/5) | `presenter-receiver-linux-armv7`  |
+| Linux x86_64                                          | `presenter-receiver-linux-x86_64` |
+| macOS Apple Silicon                                   | `presenter-receiver-macos-arm64`  |
 
 On Linux the binary must match the operating system's userland, not the CPU or kernel. 32-bit Raspberry Pi OS runs a 64-bit kernel on a Pi 3/4/5 (`uname -m` reports `aarch64`), but it can only run the 32-bit `linux-armv7` binary. Check with `dpkg --print-architecture`: `arm64` needs `linux-arm64`, `armhf` needs `linux-armv7`. The installer checks this and picks the right binary. The armv7 build needs an ARMv7 CPU, so the Pi Zero / Zero W and Pi 1 (ARMv6) are not supported.
 
@@ -43,7 +43,7 @@ The binary runs as a single process with two concurrent parts:
 
 ### One-line installer (recommended)
 
-The installer script auto-detects the platform, installs required system libraries (Linux only), downloads the correct binary from the latest GitHub release, and places it in `/usr/local/bin`.
+The installer script auto-detects the platform, installs required system libraries (Linux only), downloads the correct binary from the newest GitHub release that carries it, and places it in `/usr/local/bin`.
 
 **Install only:**
 
@@ -69,12 +69,12 @@ The install command is also available pre-filled with your server's address on t
 
 1. Detects OS and CPU architecture.
 2. On Linux with `apt`: checks for and installs missing shared libraries (`libcairo2`, `libcairo-gobject2`, `libpango-1.0-0`, `libpangocairo-1.0-0`, `libpangoft2-1.0-0`, `libglib2.0-0`). On Debian trixie and later, including current Raspberry Pi OS, it installs the renamed `t64` package where one exists (`libglib2.0-0t64`).
-3. Downloads the matching binary from the latest GitHub release.
-4. Installs the binary to `/usr/local/bin/presenter-receiver` (falls back to the current directory if sudo is unavailable).
+3. Finds the newest release that carries the matching binary: an app release (`v2.11.0` and later include every receiver build) or, up to 2.10, a separate `presenter-receiver-v*` release. It downloads the binary from the release page, and through GitHub's API when that link fails (it has returned 504 for hours at a time).
+4. Installs the binary to `/usr/local/bin/presenter-receiver` (falls back to the current directory if sudo is unavailable) and records the release tag next to it in `/usr/local/bin/presenter-receiver.release-tag`.
 5. If `--service` is passed:
    - Removes any previously installed background service.
    - Configures getty auto-login on TTY1 so the console logs in automatically on boot (no login prompt).
-   - Creates `~/.local/log/` and writes a restart loop to `~/.bash_profile` that redirects all output to `~/.local/log/presenter-receiver.log`.
+   - Creates `~/.local/log/` and writes a restart loop to `~/.bash_profile` that redirects all output to `~/.local/log/presenter-receiver.log`. Before each start the loop updates the receiver (see [Updating](#updating)).
    - Writes `/etc/sysctl.d/99-presenter-console.conf` with `kernel.printk = 1 4 1 3` to prevent kernel messages (undervoltage warnings, hwmon events, etc.) from overwriting the framebuffer display.
    - Restarts the getty service so the change takes effect immediately.
 
@@ -147,7 +147,15 @@ The **Connect** page of the Tauri app has an SSH Access section that generates t
 
 ## Updating
 
-Re-run the same install command used during the original installation. The script always downloads the latest release and overwrites the existing binary. If `--service` was used originally, include it again — the script is idempotent and will update the WebSocket URL in `~/.bash_profile` as well.
+A receiver installed with `--service` updates itself: before each start, the auto-start loop fetches the current `install.sh` and runs it with `--update`. That downloads the newest release only when it differs from the tag in `presenter-receiver.release-tag`, never asks for a password (`sudo -n`), and gives up after a short timeout. When the Pi is offline or the update fails, the loop writes an `[update]` line to the log and starts the receiver that is already installed. Receivers installed before this change get the self-update the next time the install command is run with `--service`.
+
+To update by hand without changing anything else:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash -s -- --update
+```
+
+Or re-run the same install command used during the original installation. The script downloads the newest release and overwrites the existing binary. If `--service` was used originally, include it again — the script is idempotent and will update the WebSocket URL in `~/.bash_profile` as well.
 
 After the script completes, reboot the device (or kill the running process — the restart loop will start the new binary within 3 seconds).
 

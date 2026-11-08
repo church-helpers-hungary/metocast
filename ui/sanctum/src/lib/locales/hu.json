@@ -452,7 +452,7 @@
       "section": "Prezenter fogadó",
       "hint": "Telepítés Raspberry Pi kijelzőre",
       "autostart": "Automatikus indítás bootoláskor",
-      "autostartMeta": "Konzol automatikus bejelentkezés a TTY1-en (csak Linux / systemd)",
+      "autostartMeta": "Konzol automatikus bejelentkezés a TTY1-en, minden indítás előtt frissíti magát (csak Linux / systemd)",
       "command": "Telepítő parancs",
       "copy": "Másolás",
       "copied": "Másolva"
