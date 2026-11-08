@@ -35,6 +35,9 @@ describe.skipIf(!isLive)('Presenter WebSocket Commands', () => {
     const frames = new WsTestClient('presenter=frames');
     try {
       await frames.waitForConnect();
+      // The state pushed on connect, light too; consumed so the replies below line up.
+      const pushed = await frames.waitForMessage('presenter.state');
+      expect(pushed['svgOmitted']).toBe(true);
       const light = await frames.command({ type: 'presenter.status' }, 'presenter.state');
       expect(light['svgOmitted']).toBe(true);
       const svgSlides = (light['state'] as { svgSlides: { svg: string }[] }).svgSlides;
