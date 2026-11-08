@@ -49,7 +49,7 @@ use crate::server::AppState;
 /// How many finished runs are kept, newest first.
 pub const HISTORY: usize = 50;
 
-type WsClients = Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>;
+type WsClients = Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>;
 
 /// One run, waiting its turn.
 pub struct Job {
@@ -646,14 +646,14 @@ mod tests {
     fn service() -> (
         Arc<AutomationService>,
         mpsc::UnboundedReceiver<Job>,
-        mpsc::UnboundedReceiver<Message>,
+        mpsc::UnboundedReceiver<crate::server::ws_client::Outgoing>,
     ) {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .acquire_timeout(Duration::from_millis(200))
             .connect_lazy("postgres://nobody@127.0.0.1:1/none")
             .expect("a lazy pool");
         let clients: WsClients = Arc::new(RwLock::new(HashMap::new()));
-        let (client, messages) = mpsc::unbounded_channel();
+        let (client, messages) = crate::server::ws_client::ClientTx::channel(false);
         clients
             .try_write()
             .expect("nobody holds the clients yet")
@@ -1088,8 +1088,8 @@ mod tests {
         assert_eq!(runs[HISTORY - 1].name, "run 5");
     }
 
-    fn text(message: Message) -> String {
-        match message {
+    fn text(outgoing: crate::server::ws_client::Outgoing) -> String {
+        match outgoing.message {
             Message::Text(text) => text.as_str().to_string(),
             other => panic!("expected text, got {other:?}"),
         }

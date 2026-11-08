@@ -549,13 +549,17 @@
       "state": {
         "type": "object"
       },
+      "svgOmitted": {
+        "type": "boolean"
+      },
       "type": {
         "const": "presenter.state"
       }
     },
     "required": [
       "type",
-      "state"
+      "state",
+      "svgOmitted"
     ],
     "type": "object"
   },

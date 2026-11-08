@@ -5,9 +5,8 @@ use metocast_core::best_effort::LogFailed;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::extract::ws::Message;
 use sqlx::PgPool;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::connectors::{
@@ -53,7 +52,7 @@ pub struct UploadService {
     facebook_connector: Arc<FacebookConnector>,
     obs_connector: Arc<ObsConnector>,
     facebook_config: Arc<RwLock<FacebookConfig>>,
-    ws_clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    ws_clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
 }
 
 impl UploadService {
@@ -63,7 +62,7 @@ impl UploadService {
         facebook_connector: Arc<FacebookConnector>,
         obs_connector: Arc<ObsConnector>,
         facebook_config: Arc<RwLock<FacebookConfig>>,
-        ws_clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+        ws_clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
     ) -> Self {
         Self {
             pool,

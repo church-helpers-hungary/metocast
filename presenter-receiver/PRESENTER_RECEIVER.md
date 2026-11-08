@@ -6,12 +6,12 @@ A standalone binary that connects to the Metocast server over WebSocket and rend
 
 ## Supported platforms
 
-| Platform                                                 | Binary                            |
-| -------------------------------------------------------- | --------------------------------- |
-| Linux arm64, 64-bit OS (Raspberry Pi 3/4/5)              | `presenter-receiver-linux-arm64`  |
-| Linux armhf (armv7), 32-bit OS (Raspberry Pi 2/3/4/5)    | `presenter-receiver-linux-armv7`  |
-| Linux x86_64                                             | `presenter-receiver-linux-x86_64` |
-| macOS Apple Silicon                                      | `presenter-receiver-macos-arm64`  |
+| Platform                                              | Binary                            |
+| ----------------------------------------------------- | --------------------------------- |
+| Linux arm64, 64-bit OS (Raspberry Pi 3/4/5)           | `presenter-receiver-linux-arm64`  |
+| Linux armhf (armv7), 32-bit OS (Raspberry Pi 2/3/4/5) | `presenter-receiver-linux-armv7`  |
+| Linux x86_64                                          | `presenter-receiver-linux-x86_64` |
+| macOS Apple Silicon                                   | `presenter-receiver-macos-arm64`  |
 
 On Linux the binary must match the operating system's userland, not the CPU or kernel. 32-bit Raspberry Pi OS runs a 64-bit kernel on a Pi 3/4/5 (`uname -m` reports `aarch64`), but it can only run the 32-bit `linux-armv7` binary. Check with `dpkg --print-architecture`: `arm64` needs `linux-arm64`, `armhf` needs `linux-armv7`. The installer checks this and picks the right binary. The armv7 build needs an ARMv7 CPU, so the Pi Zero / Zero W and Pi 1 (ARMv6) are not supported.
 
@@ -157,6 +157,10 @@ After the script completes, reboot the device (or kill the running process — t
 
 The presenter receiver speaks a subset of the Metocast WebSocket protocol. All messages are JSON text frames.
 
+### Connection URL
+
+The receiver adds `presenter=frames` to the URL it is given (`ws://host:3737/ws?presenter=frames&token=…`). It tells the server that this screen gets SVG slides drawn as JPEGs (`presenter.frame`), so the server leaves the SVGs out of `presenter.state`. A deck with photos is hundreds of kilobytes of SVG, too much to send a Raspberry Pi on Wi‑Fi or a 100 Mb/s port on every step of the service order. A server older than the parameter ignores it and sends the SVGs as before.
+
 ### Messages sent by the receiver (client to server)
 
 **Registration** — sent immediately after the WebSocket handshake:
@@ -177,6 +181,12 @@ The presenter receiver speaks a subset of the Metocast WebSocket protocol. All m
 { "type": "presenter.status" }
 ```
 
+**SVG request** — sent only when the receiver has to draw an SVG slide itself and the server left the SVGs out (`svgOmitted: true`). The server replies with `presenter.state` including them:
+
+```json
+{ "type": "presenter.status", "svg": true }
+```
+
 **Ping reply** — sent in response to every `ping` message from the server:
 
 ```json
@@ -191,7 +201,10 @@ The presenter receiver speaks a subset of the Metocast WebSocket protocol. All m
 { "type": "presenter.frame", "slide": 1, "width": 1920, "height": 1080 }
 ```
 
-A Raspberry Pi takes seconds to draw a full-screen photo with resvg (7 s for the welcome slide on a Pi 2 at 1080p, 33 s at 4K); decoding the server's JPEG takes about 1 s on a Pi 2. Replies come in order, so only the reply to the latest request is shown. If the server answers `error`, or sends nothing within 10 s (a server older than the command), the receiver draws the slide itself as before.
+A Raspberry Pi takes seconds to draw a full-screen photo with resvg (7 s for the welcome slide on a Pi 2 at 1080p, 33 s at 4K); decoding the server's JPEG takes about 1 s on a Pi 2. Replies come in order, so only the reply to the latest request is shown, and a late reply is never taken for a later request's.
+
+- If the server answers `unauthorized` (a server older than the command), the receiver draws every SVG slide itself for the rest of the connection.
+- If it answers another `error`, or sends nothing within 10 s (a slow link), the receiver draws that one slide itself, asking for the SVGs first when they were left out, and asks the server again for the next slide.
 
 ---
 
@@ -237,7 +250,8 @@ The receiver ignores all message types it does not recognise. Unknown types do n
       }
     ],
     "svgSlides": []
-  }
+  },
+  "svgOmitted": false
 }
 ```
 
@@ -248,11 +262,12 @@ Field notes:
 - `renderMode` — `"text"` uses the paragraph renderer; `"svg"` uses `svgSlides`.
 - `muted` — when `true`, the receiver renders a black frame regardless of `currentSlide`.
 - `slides` — full array of all slides including their text content. Only the slide at `currentSlide` is rendered.
-- `svgSlides` — full array of self-contained SVG slides when `renderMode` is `"svg"`.
+- `svgSlides` — full array of self-contained SVG slides when `renderMode` is `"svg"`. With `svgOmitted: true` each entry keeps its `index` and size but its `svg` is empty.
+- `svgOmitted` — `true` when the receiver connected with `presenter=frames`; older servers leave it out, which means `false`.
 - `paragraphs[].align` — one of `"left"`, `"center"`, `"right"`, `"justify"`. The receiver maps these to Pango alignment values.
 - `paragraphs[].text` — plain text. Hard line breaks within a paragraph are represented as `\n` characters.
 
-**SVG presenter state** — used when the web presenter opens a normal PPTX in visual mode. The receiver asks the server for the active slide as a frame (`presenter.frame`), and draws the SVG itself only when the server can't:
+**SVG presenter state** — used when the web presenter opens a normal PPTX in visual mode. The receiver asks the server for the active slide as a frame (`presenter.frame`), and draws the SVG itself only when the server can't. This is the state as the receiver gets it with `presenter=frames`:
 
 ```json
 {
@@ -268,14 +283,17 @@ Field notes:
     "svgSlides": [
       {
         "index": 1,
-        "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1280 720\">...</svg>",
+        "svg": "",
         "widthPx": 1280,
         "heightPx": 720
       }
     ]
-  }
+  },
+  "svgOmitted": true
 }
 ```
+
+The server queues messages for each client. When a newer `presenter.state` is broadcast while an older one is still waiting to be sent to a slow receiver, the older one is dropped, along with the `presenter.slide_changed` messages queued before the newer state: the receiver jumps straight to the current deck instead of showing each one it missed.
 
 **Incremental slide update** — sent when only the active slide number changes (navigation). The receiver updates `currentSlide` and re-renders without replacing the slide content array:
 

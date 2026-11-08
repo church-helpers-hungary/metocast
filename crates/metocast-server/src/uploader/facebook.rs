@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use axum::extract::ws::Message;
 use tokio::io::AsyncReadExt;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use super::{UploadResume, UploadSource};
@@ -230,7 +229,7 @@ async fn upload_captions(
 /// Run the full Facebook chunked upload for a recording.
 pub(super) async fn run_upload(
     pool: &sqlx::PgPool,
-    ws_clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    ws_clients: &Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
     recording_id: Uuid,
     source: UploadSource<'_>,
     resume: UploadResume,

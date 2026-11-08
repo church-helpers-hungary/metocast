@@ -12,6 +12,7 @@ pub mod redact;
 pub mod routes;
 pub mod websocket;
 pub mod welcome;
+pub mod ws_client;
 pub mod ws_events;
 
 use crate::HostHandle;
@@ -26,7 +27,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 use tokio::net::TcpListener;
-use tokio::sync::{RwLock, mpsc, oneshot, watch};
+use tokio::sync::{RwLock, oneshot, watch};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use uuid::Uuid;
@@ -58,7 +59,7 @@ pub(crate) const OAUTH_REDIRECT_URI: &str = "http://127.0.0.1:8766/callback";
 pub struct AppState {
     pub pool: PgPool,
     pub auth_token: Arc<RwLock<String>>,
-    pub ws_clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    pub ws_clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
     pub server_id: String,
     pub obs_connector: Arc<ObsConnector>,
     pub blackmagic_camera_connector: Arc<BlackmagicCameraConnector>,
@@ -180,7 +181,7 @@ pub async fn build_and_serve(options: ServerOptions) -> anyhow::Result<()> {
     } = options;
     redact::add_secret(&auth_token.read().await);
     redact::add_secret(&admin_token);
-    let ws_clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>> =
+    let ws_clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>> =
         Arc::new(RwLock::new(HashMap::new()));
     let server_id = Uuid::new_v4().to_string();
 
@@ -1196,7 +1197,7 @@ async fn probe_duration(path: &std::path::Path) -> f64 {
 /// (if a current event exists) or `untracked_recordings`.
 async fn handle_obs_recording_events(
     pool: PgPool,
-    clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
     recording_rx: &mut tokio::sync::broadcast::Receiver<crate::connectors::obs::ObsRecordingEvent>,
 ) {
     loop {

@@ -12,7 +12,6 @@ use metocast_core::best_effort::LogGone;
 use metocast_core::events::{EventOrder, OrderItem, OrderItemKind, OrderPosition, SlideFolder};
 use serde_json::json;
 use sqlx::{PgPool, Row};
-use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::database::settings;
@@ -456,7 +455,7 @@ pub async fn go(
     state: &AppState,
     event_id: Uuid,
     item_id: Uuid,
-    client_tx: &mpsc::UnboundedSender<Message>,
+    client_tx: &crate::server::ws_client::ClientTx,
 ) -> Result<(), String> {
     let items = fetch(&state.pool, event_id)
         .await
@@ -516,7 +515,7 @@ pub async fn step(
     state: &AppState,
     event_id: Option<Uuid>,
     by: isize,
-    client_tx: &mpsc::UnboundedSender<Message>,
+    client_tx: &crate::server::ws_client::ClientTx,
 ) -> Result<(), String> {
     let current = *state.order_position.read().await;
     let event_id = event_id

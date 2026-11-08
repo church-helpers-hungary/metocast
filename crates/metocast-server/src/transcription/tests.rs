@@ -1,4 +1,5 @@
 use super::*;
+use crate::server::ws_client::Outgoing;
 use futures_util::{SinkExt as _, StreamExt as _};
 use metocast_core::best_effort::LogFailed;
 use metocast_transcription::framer::Frame;
@@ -177,7 +178,7 @@ async fn rotates_then_stops_on_no_credit_without_duplicates() {
         .unwrap();
     }
     let session_id = session.id;
-    let (client_tx, mut client_rx) = mpsc::unbounded_channel();
+    let (client_tx, mut client_rx) = crate::server::ws_client::ClientTx::channel(false);
     service
         .clients
         .write()
@@ -195,7 +196,11 @@ async fn rotates_then_stops_on_no_credit_without_duplicates() {
 
     assert_eq!(outcome, Outcome::Failed("noCredit".to_string()));
     let mut segments = Vec::new();
-    while let Ok(Message::Text(text)) = client_rx.try_recv() {
+    while let Ok(Outgoing {
+        message: Message::Text(text),
+        ..
+    }) = client_rx.try_recv()
+    {
         let message: Value = serde_json::from_str(&text).unwrap();
         if message["type"] == "transcription.segment" {
             let segment = &message["segment"];

@@ -30,7 +30,7 @@ use axum::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use tokio::sync::{Notify, broadcast, mpsc, watch};
+use tokio::sync::{Notify, broadcast, watch};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -695,15 +695,15 @@ impl McpState {
         let mut sessions = self.sessions.lock().await;
         sessions.seen.insert(id, Instant::now());
         if sessions.feed.is_none() {
-            let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+            let (tx, mut rx) = crate::server::ws_client::ClientTx::channel(false);
             let feed = Uuid::new_v4();
             self.app.ws_clients.write().await.insert(feed, tx);
             sessions.feed = Some(feed);
             let events = self.events.clone();
             let updates = self.updates.clone();
             tokio::spawn(async move {
-                while let Some(message) = rx.recv().await {
-                    if let Message::Text(text) = message
+                while let Some(outgoing) = rx.recv().await {
+                    if let Message::Text(text) = outgoing.message
                         && let Ok(event) = serde_json::from_str::<Value>(&text)
                         && event["type"] != "ping"
                     {

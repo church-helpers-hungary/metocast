@@ -13,6 +13,16 @@ shows **both** addresses this computer has, best first, each with its own **Copy
 If the IP link stops working after a restart, the router gave the computer a new address: copy
 the link again, or give the computer a fixed address (a DHCP reservation) on the router.
 
+## Slow screens (Raspberry Pi receiver)
+
+The Raspberry Pi `presenter-receiver` connects with `/ws?presenter=frames`. The server then
+sends it each deck without its SVG slides (the photos in a song deck make those hundreds of
+kilobytes), and draws the slide it shows as a JPEG on request (`presenter.frame`). When the
+server is slow to answer, the Pi draws that one slide itself and asks the server again for the
+next one. A screen that falls behind gets only the newest deck: one still waiting to be sent
+when the operator moves on is dropped, so the screen jumps to what is on now instead of showing
+each step it missed. See `presenter-receiver/PRESENTER_RECEIVER.md` for the messages.
+
 ## Where the links are
 
 | Where                                         | What it shows                               |

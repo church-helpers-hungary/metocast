@@ -28,8 +28,9 @@ export class WsTestClient {
   private connectReject: ((err: Error) => void) | undefined;
   private connected = false;
 
-  constructor() {
-    this.ws = new WebSocket(`${WS_URL}/ws?token=${TOKEN}`);
+  /** `query` is appended to the connection URL, e.g. `presenter=frames`. */
+  constructor(query = '') {
+    this.ws = new WebSocket(`${WS_URL}/ws?token=${TOKEN}${query ? `&${query}` : ''}`);
 
     this.ws.on('message', (data: WebSocket.Data) => {
       const raw = data.toString();

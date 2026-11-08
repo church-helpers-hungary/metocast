@@ -113,7 +113,7 @@ Connect to `ws://<host>/ws?token=<token>`. Send `{"type": "<command>", …fields
 | `presenter.next` | — | — |
 | `presenter.prev` | — | — |
 | `presenter.slide.update` | `slide_index`*, `texts`* | — |
-| `presenter.status` | — | — |
+| `presenter.status` | `svg` | — |
 | `presenter.unload` | — | — |
 | `presenter.unmute` | — | — |
 | `recorders.start` | — | — |
@@ -169,7 +169,7 @@ Connect to `ws://<host>/ws?token=<token>`. Send `{"type": "<command>", …fields
 | `ppt.search_results` | Reply to `ppt.search` | `files` array, `filter` string |
 | `presentation.settings` | Reply to `presentation.get_settings`, and sent on change | `useWebPresenter` boolean, `presenterTheme` string |
 | `presenter.slide_changed` | The presenter moved to another slide | `currentSlide` integer?, `totalSlides` integer? |
-| `presenter.state` | The full web-presenter state | `state` object |
+| `presenter.state` | The full web-presenter state. `svgOmitted` is true for a client connected with `/ws?presenter=frames`: each `svgSlides[].svg` is empty and the slides come from `presenter.frame` | `state` object, `svgOmitted` boolean |
 | `queue.stats` | Job queue counters; sent while any client is connected | `queues` array |
 | `recorder.stopped` | A recording stopped: which recorder, why, and what it said | `target` object, `reason` string, `error` string? |
 | `recorders.state` | The Record button's recorders: selected, connected, recording, last start | `recorders` array |
