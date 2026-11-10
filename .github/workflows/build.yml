@@ -674,6 +674,17 @@ jobs:
           workspaces: '. -> target'
           shared-key: ${{ matrix.artifact }}-${{ steps.brew-versions.outputs.ver || 'linux' }}
 
+      # The receivers in an app release report the tag's version, like the separate
+      # presenter-receiver-v* releases do. perl, not scripts/stamp-version.mjs: the bullseye
+      # container has no Node.
+      - name: Update receiver version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          perl -pi -e "s/^version = \".*\"/version = \"$VERSION\"/" presenter-receiver/Cargo.toml
+          grep -q "^version = \"$VERSION\"$" presenter-receiver/Cargo.toml
+
       - name: Build release binary
         working-directory: presenter-receiver
         shell: bash

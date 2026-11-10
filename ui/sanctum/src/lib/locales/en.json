@@ -402,7 +402,7 @@
       "section": "Presenter receiver",
       "hint": "Install on a Raspberry Pi display",
       "autostart": "Auto-start on boot",
-      "autostartMeta": "Console auto-login on TTY1 (Linux / systemd only)",
+      "autostartMeta": "Console auto-login on TTY1, updates itself before each start (Linux / systemd only)",
       "command": "Install command",
       "copy": "Copy",
       "copied": "Copied"

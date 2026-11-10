@@ -10,15 +10,34 @@
 # Install and register as a systemd service (auto-starts on boot):
 #   curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash -s -- ws://YOUR_SERVER_IP:3737/ws --service
 #
+# Update only (what the auto-start loop runs before each start; never asks for a password):
+#   curl -fsSL https://raw.githubusercontent.com/church-helpers-hungary/metocast/master/presenter-receiver/install.sh | bash -s -- --update
+#
 set -e
 
 REPO="church-helpers-hungary/metocast"
+INSTALL_SCRIPT_URL="https://raw.githubusercontent.com/${REPO}/master/presenter-receiver/install.sh"
 DEST="${PRESENTER_INSTALL_DIR:-/usr/local/bin}/presenter-receiver"
-WS_URL="${1:-}"
+# The release tag the installed binary came from, so an update can skip the download.
+TAG_FILE="${DEST}.release-tag"
+WS_URL=""
 INSTALL_SERVICE=false
+UPDATE_ONLY=false
 for arg in "$@"; do
-    [ "$arg" = "--service" ] && INSTALL_SERVICE=true
+    case "$arg" in
+        --service) INSTALL_SERVICE=true ;;
+        --update)  UPDATE_ONLY=true ;;
+        -*)        echo "Unknown option: $arg" >&2; exit 1 ;;
+        *)         WS_URL="$arg" ;;
+    esac
 done
+
+# An update runs unattended on boot: sudo must fail instead of waiting for a password.
+if [ "$UPDATE_ONLY" = "true" ]; then
+    SUDO="sudo -n"
+else
+    SUDO="sudo"
+fi
 
 # ── Detect platform ───────────────────────────────────────────────────────────
 OS="$(uname -s)"
@@ -59,20 +78,43 @@ case "$PLATFORM" in
         ;;
 esac
 
-# ── Find latest presenter-receiver release ────────────────────────────────────
-RELEASE_TAG=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" \
-  | grep '"tag_name"' \
-  | grep 'presenter-receiver-v' \
-  | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/' \
-  | sort -V \
-  | tail -1)
+# ── Find the newest release that carries this binary ──────────────────────────
+# The receiver ships in every app release (v2.11.0, …) and, up to 2.10, also in its own
+# presenter-receiver-v* releases. Pick the highest version of either that has the asset, and
+# remember the asset's API URL: GitHub's API download still works when the normal release
+# download link times out.
+RELEASES_JSON="$(curl -fsSL --connect-timeout 10 --max-time 60 \
+    "https://api.github.com/repos/${REPO}/releases?per_page=50")"
+RELEASE_LINE=$(printf '%s\n' "$RELEASES_JSON" | awk -v want="$BINARY" '
+    /^    "tag_name": / { tag = $2; gsub(/[",]/, "", tag) }
+    /^        "url": /  { url = $2; gsub(/[",]/, "", url) }
+    /^        "name": / {
+        name = $2; gsub(/[",]/, "", name)
+        if (name == want) {
+            version = tag; sub(/^presenter-receiver-v/, "", version); sub(/^v/, "", version)
+            print version, tag, url
+        }
+    }' | sort -V -k1,1 | tail -1)
+RELEASE_TAG="$(printf '%s' "$RELEASE_LINE" | cut -d' ' -f2)"
+ASSET_API_URL="$(printf '%s' "$RELEASE_LINE" | cut -d' ' -f3)"
 
-if [ -z "$RELEASE_TAG" ]; then
-    echo "Error: no presenter-receiver release found on GitHub"
+if [ -z "$RELEASE_TAG" ] || [ -z "$ASSET_API_URL" ]; then
+    echo "Error: no release on GitHub carries $BINARY" >&2
     exit 1
 fi
 
 BASE_URL="https://github.com/${REPO}/releases/download/${RELEASE_TAG}"
+
+if [ "$UPDATE_ONLY" = "true" ]; then
+    if [ ! -x "$DEST" ]; then
+        echo "Error: --update needs an installed receiver at $DEST; run the installer without --update first" >&2
+        exit 1
+    fi
+    if [ -f "$TAG_FILE" ] && [ "$(cat "$TAG_FILE")" = "$RELEASE_TAG" ]; then
+        echo "==> Presenter receiver is up to date (${RELEASE_TAG})"
+        exit 0
+    fi
+fi
 
 # ── Install Linux system dependencies ────────────────────────────────────────
 if [ "$OS" = "Linux" ] && [ -n "$(command -v apt-get)" ]; then
@@ -88,7 +130,7 @@ if [ "$OS" = "Linux" ] && [ -n "$(command -v apt-get)" ]; then
     done
     if [ "${#MISSING[@]}" -gt 0 ]; then
         echo "==> Installing required system libraries: ${MISSING[*]}"
-        sudo apt-get install -y "${MISSING[@]}"
+        $SUDO apt-get install -y "${MISSING[@]}"
     fi
 fi
 
@@ -99,24 +141,26 @@ echo "==> Downloading from GitHub Releases (${RELEASE_TAG})..."
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
-if [ -n "$(command -v curl)" ]; then
-    curl -fsSL "$BASE_URL/$BINARY" -o "$TMP"
-elif [ -n "$(command -v wget)" ]; then
-    wget -qO "$TMP" "$BASE_URL/$BINARY"
-else
-    echo "Error: curl or wget is required"
-    exit 1
+if ! curl -fsSL --connect-timeout 10 --max-time 300 "$BASE_URL/$BINARY" -o "$TMP"; then
+    echo "==> Release download failed; trying GitHub's API download..."
+    curl -fsSL --connect-timeout 10 --max-time 300 \
+        -H "Accept: application/octet-stream" "$ASSET_API_URL" -o "$TMP"
 fi
 
 # ── Install ───────────────────────────────────────────────────────────────────
 chmod +x "$TMP"
 
-# Always try sudo install to /usr/local/bin so the service path is stable
-if sudo mv "$TMP" "$DEST"; then
-    echo "==> Installed to $DEST"
-elif [ -w "$(dirname "$DEST")" ]; then
-    mv "$TMP" "$DEST"
-    echo "==> Installed to $DEST"
+# Moves $1 to $2: with sudo, so /usr/local/bin and the service path stay stable, or without it
+# where the folder is writable.
+put_file() {
+    $SUDO mv "$1" "$2" || { [ -w "$(dirname "$2")" ] && mv "$1" "$2"; }
+}
+
+if put_file "$TMP" "$DEST"; then
+    echo "==> Installed to $DEST (${RELEASE_TAG})"
+elif [ "$UPDATE_ONLY" = "true" ]; then
+    echo "Error: cannot replace $DEST without a password; run the installer by hand" >&2
+    exit 1
 else
     LOCAL_DEST="./presenter-receiver"
     cp "$TMP" "$LOCAL_DEST"
@@ -124,6 +168,19 @@ else
     DEST="$LOCAL_DEST"
     echo "==> /usr/local/bin not writable — installed to $LOCAL_DEST"
     echo "    To install globally: sudo mv $LOCAL_DEST /usr/local/bin/presenter-receiver"
+fi
+
+TAG_FILE="${DEST}.release-tag"
+TAG_TMP="$(mktemp)"
+printf '%s\n' "$RELEASE_TAG" > "$TAG_TMP"
+chmod 644 "$TAG_TMP"
+if ! put_file "$TAG_TMP" "$TAG_FILE"; then
+    rm -f "$TAG_TMP"
+    echo "warning: could not record the installed release in $TAG_FILE; the next update downloads it again" >&2
+fi
+
+if [ "$UPDATE_ONLY" = "true" ]; then
+    exit 0
 fi
 
 # ── Auto-start via console auto-login (Linux only, opt-in via --service) ──────
@@ -187,12 +244,23 @@ EOF
     sudo chown "$SERVICE_USER:$SERVICE_USER" "$LOG_DIR"
     LOG_FILE="$LOG_DIR/presenter-receiver.log"
 
-    # Append the auto-start block
+    # Append the auto-start block. Before each start it fetches the current installer and runs
+    # it with --update; offline or on any failure it says so in the log and starts the
+    # receiver that is already installed.
     sudo tee -a "$PROFILE" <<BASHEOF
 
 $MARKER
 if [ "\$(tty)" = "/dev/tty1" ]; then
     while true; do
+        presenter_updater="\$(mktemp)"
+        if curl -fsSL --connect-timeout 10 --max-time 60 "$INSTALL_SCRIPT_URL" -o "\$presenter_updater" 2>> "$LOG_FILE"; then
+            if ! bash "\$presenter_updater" --update >> "$LOG_FILE" 2>&1; then
+                echo "[update] \$(date '+%F %T') update failed; starting the installed receiver" >> "$LOG_FILE"
+            fi
+        else
+            echo "[update] \$(date '+%F %T') could not fetch the installer; starting the installed receiver" >> "$LOG_FILE"
+        fi
+        rm -f "\$presenter_updater"
         $DEST $WS_URL >> "$LOG_FILE" 2>&1
         sleep 3
     done
