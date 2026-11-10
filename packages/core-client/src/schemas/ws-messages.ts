@@ -428,9 +428,16 @@ export const WsMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('presentation.settings'),
     useWebPresenter: z.boolean(),
     presenterTheme: PresenterThemeSchema.default('classic'),
+    /** Each screen's deliveries and `presenter.ack`s go to the server's log. */
+    deliveryLog: z.boolean().default(false),
   }),
   // ── Presenter (push + command responses) ───────────────────────────────────
-  z.object({ type: z.literal('presenter.state'), state: PresenterStateSchema }),
+  z.object({
+    type: z.literal('presenter.state'),
+    state: PresenterStateSchema,
+    /** True only for a client connected with `/ws?presenter=frames`: `svgSlides[].svg` is empty. */
+    svgOmitted: z.boolean().default(false),
+  }),
   // ── Order of Service (push + `order.status` reply) ────────────────────────
   z.object({
     type: z.literal('order.state'),

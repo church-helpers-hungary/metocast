@@ -38,7 +38,7 @@ use crate::database::settings;
 use audio::FrameResult;
 use youtube_captions::Caption;
 
-type WsClients = Arc<tokio::sync::RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>;
+type WsClients = Arc<tokio::sync::RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>;
 
 const ROTATE_AFTER: Duration = Duration::from_secs(55 * 60);
 /// Rotate even mid-sentence before the upstream session expires at 60 minutes.

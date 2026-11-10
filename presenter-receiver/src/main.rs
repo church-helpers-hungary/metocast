@@ -37,10 +37,19 @@ fn parse_args() -> String {
         .find(|w| w[0] == "--token")
         .map(|w| w[1].clone());
 
-    match token {
-        Some(t) => format!("{host}?token={t}"),
-        None => host,
+    receiver_url(&host, token.as_deref())
+}
+
+/// The server URL with `presenter=frames`, which asks the server to leave the SVG slides out of
+/// `presenter.state`: the receiver gets each slide drawn as a JPEG with `presenter.frame`.
+fn receiver_url(host: &str, token: Option<&str>) -> String {
+    let separator = if host.contains('?') { '&' } else { '?' };
+    let mut url = format!("{host}{separator}presenter=frames");
+    if let Some(token) = token {
+        url.push_str("&token=");
+        url.push_str(token);
     }
+    url
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -244,5 +253,26 @@ fn run_display(
         }
 
         std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::receiver_url;
+
+    #[test]
+    fn the_url_asks_for_frames_and_keeps_the_token() {
+        assert_eq!(
+            receiver_url("ws://10.0.0.2:3737/ws", None),
+            "ws://10.0.0.2:3737/ws?presenter=frames"
+        );
+        assert_eq!(
+            receiver_url("ws://10.0.0.2:3737/ws", Some("abc")),
+            "ws://10.0.0.2:3737/ws?presenter=frames&token=abc"
+        );
+        assert_eq!(
+            receiver_url("ws://10.0.0.2:3737/ws?token=abc", None),
+            "ws://10.0.0.2:3737/ws?token=abc&presenter=frames"
+        );
     }
 }

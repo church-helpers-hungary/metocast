@@ -12,6 +12,7 @@ pub mod redact;
 pub mod routes;
 pub mod websocket;
 pub mod welcome;
+pub mod ws_client;
 pub mod ws_events;
 
 use crate::HostHandle;
@@ -26,7 +27,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 use tokio::net::TcpListener;
-use tokio::sync::{RwLock, mpsc, oneshot, watch};
+use tokio::sync::{RwLock, oneshot, watch};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
 use uuid::Uuid;
@@ -58,7 +59,7 @@ pub(crate) const OAUTH_REDIRECT_URI: &str = "http://127.0.0.1:8766/callback";
 pub struct AppState {
     pub pool: PgPool,
     pub auth_token: Arc<RwLock<String>>,
-    pub ws_clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    pub ws_clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
     pub server_id: String,
     pub obs_connector: Arc<ObsConnector>,
     pub blackmagic_camera_connector: Arc<BlackmagicCameraConnector>,
@@ -88,6 +89,9 @@ pub struct AppState {
     pub use_web_presenter: Arc<AtomicBool>,
     /// Visual treatment for text-mode song and Bible slides; persisted in app_settings.
     pub presenter_theme: Arc<RwLock<presenter::PresenterTheme>>,
+    /// Log every presenter message written to a client and every `presenter.ack` under the
+    /// `presenter_delivery` target; persisted in app_settings.
+    pub presenter_delivery_log: Arc<AtomicBool>,
     /// The Order of Service step on screen, if one is running. Not stored: a restart starts fresh.
     pub order_position: Arc<RwLock<Option<metocast_core::events::OrderPosition>>>,
     /// Metadata for every currently-connected WebSocket client.
@@ -180,7 +184,7 @@ pub async fn build_and_serve(options: ServerOptions) -> anyhow::Result<()> {
     } = options;
     redact::add_secret(&auth_token.read().await);
     redact::add_secret(&admin_token);
-    let ws_clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>> =
+    let ws_clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>> =
         Arc::new(RwLock::new(HashMap::new()));
     let server_id = Uuid::new_v4().to_string();
 
@@ -229,6 +233,18 @@ pub async fn build_and_serve(options: ServerOptions) -> anyhow::Result<()> {
             .unwrap_or_default(),
     ));
 
+    let presenter_delivery_log: Option<String> =
+        sqlx::query_scalar("SELECT value FROM app_settings WHERE key = 'presenter_delivery_log'")
+            .fetch_optional(&pool)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "could not read presenter_delivery_log; leaving it off");
+                None
+            });
+    let presenter_delivery_log = Arc::new(AtomicBool::new(
+        presenter_delivery_log.as_deref() == Some("true"),
+    ));
+
     let ws_client_info: Arc<tokio::sync::RwLock<HashMap<Uuid, websocket::WsClientInfo>>> =
         Arc::new(tokio::sync::RwLock::new(HashMap::new()));
     let rodecaster_audio_recorder = Arc::new(RodecasterAudioRecorder::new());
@@ -267,6 +283,7 @@ pub async fn build_and_serve(options: ServerOptions) -> anyhow::Result<()> {
         presenter_state: presenter_state.clone(),
         use_web_presenter: use_web_presenter.clone(),
         presenter_theme,
+        presenter_delivery_log,
         order_position: Arc::new(RwLock::new(None)),
         ws_client_info: ws_client_info.clone(),
         queue_wake: Arc::new(tokio::sync::Notify::new()),
@@ -1196,7 +1213,7 @@ async fn probe_duration(path: &std::path::Path) -> f64 {
 /// (if a current event exists) or `untracked_recordings`.
 async fn handle_obs_recording_events(
     pool: PgPool,
-    clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
     recording_rx: &mut tokio::sync::broadcast::Receiver<crate::connectors::obs::ObsRecordingEvent>,
 ) {
     loop {

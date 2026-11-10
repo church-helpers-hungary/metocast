@@ -36,6 +36,14 @@ struct PresentationSettingsView: View {
                         : "Decks open in Keynote on the server's Mac.")
                 }
                 Section {
+                    Toggle("Delivery Log", isOn: Binding(
+                        get: { session.deliveryLog },
+                        set: { session.show(.setDeliveryLog(enabled: $0)) }
+                    ))
+                } footer: {
+                    Text("Writes each slide sent to every screen, and when the screen showed it, to the app's log. For finding which screen lags.")
+                }
+                Section {
                     CopyableLinks(urls: presenterURLs)
                 } header: {
                     Text("Web Presenter Link")

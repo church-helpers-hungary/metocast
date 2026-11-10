@@ -152,7 +152,11 @@ pub const EVENTS: &[Event] = &[
     (
         "presentation.settings",
         "Reply to `presentation.get_settings`, and sent on change",
-        &[("useWebPresenter", "boolean"), ("presenterTheme", "string")],
+        &[
+            ("useWebPresenter", "boolean"),
+            ("presenterTheme", "string"),
+            ("deliveryLog", "boolean"),
+        ],
     ),
     (
         "presenter.slide_changed",
@@ -161,8 +165,8 @@ pub const EVENTS: &[Event] = &[
     ),
     (
         "presenter.state",
-        "The full web-presenter state",
-        &[("state", "object")],
+        "The full web-presenter state. `svgOmitted` is true for a client connected with `/ws?presenter=frames`: each `svgSlides[].svg` is empty and the slides come from `presenter.frame`",
+        &[("state", "object"), ("svgOmitted", "boolean")],
     ),
     (
         "queue.stats",

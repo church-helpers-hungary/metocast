@@ -3160,6 +3160,16 @@
         }
       }
     },
+    "Delivery Log" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kézbesítési napló"
+          }
+        }
+      }
+    },
     "Description" : {
       "localizations" : {
         "hu" : {
@@ -9992,6 +10002,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Minden bibliai hivatkozáshoz diasort készít a szerver diamappájába."
+          }
+        }
+      }
+    },
+    "Writes each slide sent to every screen, and when the screen showed it, to the app's log. For finding which screen lags." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minden képernyőre küldött diát, és azt, hogy a képernyő mikor mutatta, az alkalmazás naplójába írja. A késő képernyő megtalálásához."
           }
         }
       }

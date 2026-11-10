@@ -6,6 +6,8 @@ meta {
 
 # WebSocket commands — use a WS client.
 # Connect to: ws://{{host}}/ws?token={{authToken}}
+# A screen that draws SVG slides from presenter.frame adds &presenter=frames to get
+# presenter.state without the SVGs (svgOmitted: true).
 # All navigation commands broadcast presenter.slide_changed to all clients.
 
 get {
@@ -27,7 +29,7 @@ docs {
   | `presenter.last`  | —            | Jump to last slide |
   | `presenter.goto`  | `slide: N`   | Jump to slide N |
   | `presenter.unload`| —            | Clear the presentation |
-  | `presenter.status`| —            | Reply to sender with `presenter.state` |
+  | `presenter.status`| optional `svg: true` | Reply to sender with `presenter.state`; `svg: true` includes the SVGs for a `presenter=frames` client |
   | `presenter.frame` | `slide: N, width: W, height: H` | Reply to sender with one binary message: SVG slide N as a W×H JPEG (up to 3840×2160) |
 
   **Broadcast response for next/prev/first/last/goto:**
@@ -37,8 +39,18 @@ docs {
 
   **Response for unload / load (sent to all clients):**
   ```json
-  { "type": "presenter.state", "state": { "loaded": false, ... } }
+  { "type": "presenter.state", "state": { "loaded": false, ... }, "svgOmitted": false }
   ```
+
+  **Screens that draw slides from `presenter.frame`** connect with
+  `ws://{{host}}/ws?presenter=frames`. Their `presenter.state` messages carry
+  `"svgOmitted": true` and an empty `svg` in every `svgSlides` entry, which keeps a deck
+  with photos from being sent to them in full on every change. To draw a slide itself,
+  such a screen asks once with `{ "type": "presenter.status", "svg": true }`.
+
+  A client that is slow to receive gets only the newest `presenter.state`: one still
+  queued for it when a newer one is broadcast is dropped, with the slide changes that
+  moved within it.
 
   **Example — jump to slide 5:**
   ```json

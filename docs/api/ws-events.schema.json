@@ -496,6 +496,9 @@
   },
   "presentation.settings": {
     "properties": {
+      "deliveryLog": {
+        "type": "boolean"
+      },
       "presenterTheme": {
         "type": "string"
       },
@@ -509,7 +512,8 @@
     "required": [
       "type",
       "useWebPresenter",
-      "presenterTheme"
+      "presenterTheme",
+      "deliveryLog"
     ],
     "type": "object"
   },
@@ -549,13 +553,17 @@
       "state": {
         "type": "object"
       },
+      "svgOmitted": {
+        "type": "boolean"
+      },
       "type": {
         "const": "presenter.state"
       }
     },
     "required": [
       "type",
-      "state"
+      "state",
+      "svgOmitted"
     ],
     "type": "object"
   },

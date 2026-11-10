@@ -246,6 +246,9 @@
       "web": "Web presenter",
       "keynote": "Keynote bridge"
     },
+    "deliveryLogLabel": "Delivery log",
+    "deliveryLog": "Log slide deliveries",
+    "deliveryLogSub": "Writes each slide sent to every screen, and when the screen showed it, to the app's log. For finding which screen lags.",
     "themeLabel": "Presenter design",
     "fontsTitle": "PowerPoint fonts",
     "fontsNames": "Cormorant Garamond + Geist Mono",

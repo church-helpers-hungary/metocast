@@ -116,6 +116,7 @@ let clients = $state<WsClientInfo[]>([]);
 let pptResults = $state<PptFile[]>([]);
 let useWebPresenter = $state(true);
 let presenterTheme = $state<PresenterTheme>('classic');
+let deliveryLog = $state(false);
 let rodecasterProfile = $state<RodecasterProfile | null>(null);
 let rodecasterAudioDiscovery = $state<RodecasterAudioDiscovery | null>(null);
 let rodecasterAudioRecorder = $state<RodecasterAudioRecorderState | null>(null);
@@ -175,6 +176,9 @@ export const live = {
   },
   get presenterTheme() {
     return presenterTheme;
+  },
+  get deliveryLog() {
+    return deliveryLog;
   },
   get rodecasterProfile() {
     return rodecasterProfile;
@@ -457,6 +461,7 @@ export function handleWs(msg: WsMessage): void {
     case 'presentation.settings':
       useWebPresenter = msg.useWebPresenter;
       presenterTheme = msg.presenterTheme;
+      deliveryLog = msg.deliveryLog;
       break;
     case 'presenter.state':
       presenter = msg.state;

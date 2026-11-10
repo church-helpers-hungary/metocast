@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::extract::ws::Message;
 use serde_json::json;
 use sqlx::PgPool;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::RwLock;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
 
@@ -30,7 +30,7 @@ impl CronScheduler {
     pub async fn reload(
         &self,
         pool: PgPool,
-        ws_clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+        ws_clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
         youtube_connector: Arc<crate::connectors::youtube::YouTubeConnector>,
         upload_service: Arc<UploadService>,
     ) {
@@ -119,7 +119,7 @@ impl Default for CronScheduler {
 async fn run_job(
     job: cron_job::CronJob,
     pool: PgPool,
-    ws_clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    ws_clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
     youtube_connector: Arc<crate::connectors::youtube::YouTubeConnector>,
     upload_service: Arc<UploadService>,
 ) {
@@ -141,7 +141,7 @@ async fn run_job(
 /// directly so connected clients get real-time updates.
 async fn pull_youtube_live(
     pool: PgPool,
-    ws_clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    ws_clients: Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
     _youtube_connector: Arc<crate::connectors::youtube::YouTubeConnector>,
 ) {
     let token = match youtube::load_tokens(&pool).await {
@@ -410,7 +410,7 @@ async fn pull_youtube_live(
 async fn emit_event_changed(
     operation: &str,
     event: Event,
-    ws_clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    ws_clients: &Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
 ) {
     let msg = json!({
         "type": "event.changed",
@@ -425,7 +425,7 @@ async fn emit_event_changed(
 
 async fn broadcast_cron_status(
     has_live: bool,
-    ws_clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    ws_clients: &Arc<RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>,
 ) {
     let msg = json!({ "type": "cron.youtube_pull", "hasLive": has_live }).to_string();
     let guard = ws_clients.read().await;

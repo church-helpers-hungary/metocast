@@ -211,6 +211,9 @@ pub enum PresentationCommand {
     SetUseWebPresenter { enabled: bool },
     #[serde(rename = "presentation.set_presenter_theme")]
     SetPresenterTheme { theme: PresenterTheme },
+    /// Logs each slide sent to every screen, and each screen's `presenter.ack`, on the server.
+    #[serde(rename = "presentation.set_delivery_log")]
+    SetDeliveryLog { enabled: bool },
     #[serde(rename = "presentation.next")]
     Next,
     #[serde(rename = "presentation.prev")]
@@ -239,6 +242,9 @@ pub enum PresentationCommand {
         label: String,
         hostname: Option<String>,
     },
+    /// This screen shows slide `slide` since `shown_at` (RFC 3339, this device's clock).
+    #[serde(rename = "presenter.ack")]
+    Ack { slide: u32, shown_at: String },
     /// Answered by `clients.list`.
     #[serde(rename = "clients.list")]
     ClientsList,
@@ -451,6 +457,9 @@ pub enum ServerEvent {
         use_web_presenter: bool,
         #[serde(rename = "presenterTheme")]
         presenter_theme: PresenterTheme,
+        /// Older servers leave it out.
+        #[serde(rename = "deliveryLog", default)]
+        delivery_log: bool,
     },
     #[serde(rename = "presentation.status")]
     PresentationStatus { status: PresentationStatus },
@@ -775,7 +784,8 @@ mod tests {
             serde_json::from_str(settings).unwrap(),
             ServerEvent::PresentationSettings {
                 use_web_presenter: false,
-                presenter_theme: PresenterTheme::Editorial
+                presenter_theme: PresenterTheme::Editorial,
+                delivery_log: false,
             }
         ));
 
@@ -827,6 +837,14 @@ mod tests {
             })
             .unwrap(),
             serde_json::json!({"type": "presenter.register", "label": "iPhone", "hostname": null})
+        );
+        assert_eq!(
+            serde_json::to_value(PresentationCommand::Ack {
+                slide: 2,
+                shown_at: "2026-11-08T10:15:02.123Z".to_string()
+            })
+            .unwrap(),
+            serde_json::json!({"type": "presenter.ack", "slide": 2, "shown_at": "2026-11-08T10:15:02.123Z"})
         );
     }
 

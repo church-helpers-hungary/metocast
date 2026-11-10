@@ -40,6 +40,7 @@ use crate::server::order;
 use crate::server::ppt;
 use crate::server::presenter;
 use crate::server::routes;
+use crate::server::ws_client::{self, ClientTx, Outgoing, OutgoingKind};
 
 // ── Connected client registry ─────────────────────────────────────────────────
 
@@ -477,12 +478,18 @@ enum WsCommand {
     /// Go to slide `slide` (1-based) of the web presenter's deck.
     #[serde(rename = "presenter.goto")]
     PresenterGoto { slide: u32 },
-    /// The web presenter's full state: deck, current slide and mute. Replies with `presenter.state`.
+    /// The web presenter's full state: deck, current slide and mute. Replies with `presenter.state`. A client connected with `/ws?presenter=frames` gets the SVG slides left out unless `svg` is true.
     #[serde(rename = "presenter.status")]
-    PresenterStatus,
+    PresenterStatus {
+        #[serde(default)]
+        svg: bool,
+    },
     /// SVG slide `slide` (1-based) drawn for a `width`×`height` screen. Replies with one binary message holding the JPEG, for screens too slow to draw the SVG, such as the Raspberry Pi receiver.
     #[serde(rename = "presenter.frame")]
     PresenterFrame { slide: u32, width: u32, height: u32 },
+    /// A screen showing slide `slide` (1-based) since `shown_at`, its own clock as an RFC 3339 timecode. No reply; logged with the delay since the server sent the slide while `presentation.set_delivery_log` is on.
+    #[serde(rename = "presenter.ack")]
+    PresenterAck { slide: u32, shown_at: String },
     /// Blank the web presenter's screen.
     #[serde(rename = "presenter.mute")]
     PresenterMute,
@@ -511,6 +518,9 @@ enum WsCommand {
         #[schemars(with = "String")]
         theme: presenter::PresenterTheme,
     },
+    /// Log every presenter message sent to each screen, and each screen's `presenter.ack`, in the server's application log (target `presenter_delivery`). Answered by `presentation.settings`, broadcast.
+    #[serde(rename = "presentation.set_delivery_log")]
+    PresentationSetDeliveryLog { enabled: bool },
     /// Open a file: routes to web presenter or Keynote based on the stored setting.
     #[serde(rename = "presentation.open")]
     PresentationOpen {
@@ -609,6 +619,7 @@ async fn make_presentation_settings(state: &AppState) -> String {
         "type": "presentation.settings",
         "useWebPresenter": enabled,
         "presenterTheme": presenter_theme,
+        "deliveryLog": state.presenter_delivery_log.load(Ordering::Relaxed),
     })
     .to_string()
 }
@@ -683,7 +694,7 @@ pub(crate) async fn open_presentation(
     state: &AppState,
     file_path: String,
     render_mode: Option<presenter::PresenterRenderMode>,
-    client_tx: &mpsc::UnboundedSender<Message>,
+    client_tx: &ClientTx,
 ) {
     if state.use_web_presenter.load(Ordering::Relaxed) {
         let mode = render_mode.unwrap_or(presenter::PresenterRenderMode::Svg);
@@ -706,7 +717,7 @@ async fn load_presenter_deck(
     state: &AppState,
     file_path: String,
     mode: presenter::PresenterRenderMode,
-    client_tx: &mpsc::UnboundedSender<Message>,
+    client_tx: &ClientTx,
 ) {
     let path = file_path.clone();
     let result = tokio::task::spawn_blocking(move || presenter::load_pptx(&path, mode)).await;
@@ -728,7 +739,7 @@ async fn load_presenter_deck(
 }
 
 pub(crate) async fn broadcast_json(
-    ws_clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    ws_clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     message: &serde_json::Value,
 ) {
     let message = message.to_string();
@@ -738,7 +749,7 @@ pub(crate) async fn broadcast_json(
 }
 
 pub(crate) async fn broadcast_presentation_status(
-    ws_clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    ws_clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     state: &AppState,
 ) {
     let msg = make_presentation_status(state).await;
@@ -749,7 +760,7 @@ pub(crate) async fn broadcast_presentation_status(
 }
 
 pub(crate) async fn broadcast_notification(
-    ws_clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    ws_clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     level: &str,
     message: &str,
 ) {
@@ -763,7 +774,7 @@ pub(crate) async fn broadcast_notification(
 /// Going live on YouTube takes up to ~30 s, so it runs beside this client's other commands.
 fn spawn_stream_control(
     state: &AppState,
-    client_tx: &mpsc::UnboundedSender<Message>,
+    client_tx: &ClientTx,
     event_id: Uuid,
     platform: crate::server::broadcast::Platform,
     start: bool,
@@ -778,12 +789,12 @@ fn spawn_stream_control(
     });
 }
 
-fn ws_ok(tx: &mpsc::UnboundedSender<Message>) {
+fn ws_ok(tx: &ClientTx) {
     tx.send(Message::Text(json!({"type":"ok"}).to_string().into()))
         .log_gone();
 }
 
-fn ws_error(tx: &mpsc::UnboundedSender<Message>, msg: &str) {
+fn ws_error(tx: &ClientTx, msg: &str) {
     tx.send(Message::Text(
         json!({"type":"error","message":msg}).to_string().into(),
     ))
@@ -792,13 +803,13 @@ fn ws_error(tx: &mpsc::UnboundedSender<Message>, msg: &str) {
 
 /// Tells the client that asked for a command when it failed. Success stays silent.
 #[cfg(target_os = "macos")]
-fn report_failure(tx: &mpsc::UnboundedSender<Message>, result: Result<(), String>) {
+fn report_failure(tx: &ClientTx, result: Result<(), String>) {
     if let Err(error) = result {
         ws_error(tx, &error);
     }
 }
 
-fn reply(tx: &mpsc::UnboundedSender<Message>, result: Result<(), String>) {
+fn reply(tx: &ClientTx, result: Result<(), String>) {
     match result {
         Ok(()) => ws_ok(tx),
         Err(error) => ws_error(tx, &error),
@@ -870,6 +881,78 @@ fn presenter_event_bucket(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn svg_deck() -> presenter::PresenterState {
+        let mut state = presenter::PresenterState::empty();
+        state.render_mode = presenter::PresenterRenderMode::Svg;
+        state.current_slide = 2;
+        state.total_slides = 2;
+        state.svg_slides = (1..=2)
+            .map(|index| presenter::SvgSlideContent {
+                index,
+                svg: format!("<svg>photo {index}</svg>"),
+                width_px: 1920,
+                height_px: 1080,
+            })
+            .collect();
+        state
+    }
+
+    fn received(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Outgoing>) -> serde_json::Value {
+        let outgoing = rx.try_recv().expect("a queued message");
+        assert_eq!(outgoing.kind, OutgoingKind::PresenterState);
+        match outgoing.message {
+            Message::Text(text) => serde_json::from_str(&text).expect("JSON"),
+            other => panic!("expected text, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn frame_screens_get_the_deck_without_its_svgs_and_others_get_all_of_it() {
+        let (frames_tx, mut frames_rx) = ClientTx::channel(true);
+        let (browser_tx, mut browser_rx) = ClientTx::channel(false);
+        let clients = Arc::new(RwLock::new(HashMap::from([
+            (Uuid::new_v4(), frames_tx.clone()),
+            (Uuid::new_v4(), browser_tx),
+        ])));
+        let deck = svg_deck();
+        broadcast_presenter_state(&clients, &deck).await;
+
+        let light = received(&mut frames_rx);
+        assert_eq!(light["svgOmitted"], true);
+        assert_eq!(light["state"]["currentSlide"], 2);
+        assert_eq!(light["state"]["svgSlides"][1]["index"], 2);
+        assert_eq!(light["state"]["svgSlides"][1]["svg"], "");
+
+        let full = received(&mut browser_rx);
+        assert_eq!(full["svgOmitted"], false);
+        assert_eq!(full["state"]["svgSlides"][1]["svg"], "<svg>photo 2</svg>");
+
+        // A frame screen that has to draw a slide itself asks for the SVGs.
+        send_presenter_state(&frames_tx, &deck, true);
+        let asked = received(&mut frames_rx);
+        assert_eq!(asked["svgOmitted"], false);
+        assert_eq!(asked["state"]["svgSlides"][0]["svg"], "<svg>photo 1</svg>");
+    }
+
+    #[test]
+    fn presenter_status_parses_with_and_without_svg() {
+        let parsed = |text: &str| serde_json::from_str::<WsCommand>(text).expect(text);
+        assert!(matches!(
+            parsed(r#"{"type":"presenter.status"}"#),
+            WsCommand::PresenterStatus { svg: false }
+        ));
+        assert!(matches!(
+            parsed(r#"{"type":"presenter.status","svg":true}"#),
+            WsCommand::PresenterStatus { svg: true }
+        ));
+        assert!(matches!(
+            parsed(
+                r#"{"type":"presenter.ack","slide":3,"shown_at":"2026-11-08T10:15:02.123+01:00"}"#
+            ),
+            WsCommand::PresenterAck { slide: 3, .. }
+        ));
+    }
 
     #[test]
     fn blackmagic_camera_commands_parse_from_their_wire_names() {
@@ -1086,10 +1169,10 @@ pub(crate) async fn run_command(
     command: serde_json::Value,
 ) -> Result<Vec<serde_json::Value>, String> {
     let cmd: WsCommand = serde_json::from_value(command).map_err(|e| e.to_string())?;
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let (tx, mut rx) = ClientTx::channel(false);
     handle_ws_command(cmd, state, &tx, Uuid::new_v4()).await;
     drop(tx);
-    let decode = |message: Message| match message {
+    let decode = |outgoing: Outgoing| match outgoing.message {
         Message::Text(text) => serde_json::from_str::<serde_json::Value>(&text).ok(),
         _ => None,
     };
@@ -1114,7 +1197,7 @@ pub(crate) async fn run_command(
 async fn handle_ws_command(
     cmd: WsCommand,
     state: &AppState,
-    client_tx: &mpsc::UnboundedSender<Message>,
+    client_tx: &ClientTx,
     client_id: Uuid,
 ) {
     match cmd {
@@ -1400,10 +1483,8 @@ async fn handle_ws_command(
             .await;
             broadcast_presentation_status(&state.ws_clients, state).await;
         }
-        WsCommand::PresenterStatus => {
-            let ps = state.presenter_state.read().await;
-            let msg = serde_json::json!({ "type": "presenter.state", "state": &*ps }).to_string();
-            client_tx.send(Message::Text(msg.into())).log_gone();
+        WsCommand::PresenterStatus { svg } => {
+            send_presenter_state(client_tx, &*state.presenter_state.read().await, svg);
         }
         WsCommand::PresenterFrame {
             slide,
@@ -1516,6 +1597,48 @@ async fn handle_ws_command(
             let clients = state.ws_clients.read().await;
             for tx in clients.values() {
                 tx.send(Message::Text(msg.clone().into())).log_gone();
+            }
+        }
+        WsCommand::PresentationSetDeliveryLog { enabled } => {
+            if let Err(error) = sqlx::query(
+                "INSERT INTO app_settings (key, value) VALUES ('presenter_delivery_log', $1) \
+                 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()",
+            )
+            .bind(enabled.to_string())
+            .execute(&state.pool)
+            .await
+            {
+                ws_error(
+                    client_tx,
+                    &format!("Could not save the delivery log setting: {error}"),
+                );
+                return;
+            }
+            state
+                .presenter_delivery_log
+                .store(enabled, Ordering::Relaxed);
+            tracing::info!(target: "presenter_delivery", enabled, "presenter delivery log switched");
+            let msg = make_presentation_settings(state).await;
+            let clients = state.ws_clients.read().await;
+            for tx in clients.values() {
+                tx.send(Message::Text(msg.clone().into())).log_gone();
+            }
+        }
+        WsCommand::PresenterAck { slide, shown_at } => {
+            if state.presenter_delivery_log.load(Ordering::Relaxed) {
+                let delivered = client_tx.delivered();
+                let since = |at: std::time::Instant| at.elapsed().as_millis() as u64;
+                let client = client_name(state, client_id).await;
+                tracing::info!(
+                    target: "presenter_delivery",
+                    client,
+                    %client_id,
+                    slide,
+                    shown_at,
+                    since_queued_ms = delivered.map(|d| since(d.queued_at)),
+                    since_written_ms = delivered.map(|d| since(d.written_at)),
+                    "presenter slide acknowledged"
+                );
             }
         }
         WsCommand::PresentationOpen {
@@ -3435,7 +3558,7 @@ async fn handle_ws_command(
     }
 }
 
-async fn atem_send(state: &AppState, tx: &mpsc::UnboundedSender<Message>, command: AtemCommand) {
+async fn atem_send(state: &AppState, tx: &ClientTx, command: AtemCommand) {
     match state.atem_connector.send(command).await {
         Ok(()) => ws_ok(tx),
         Err(error) => ws_error(tx, &error),
@@ -3451,6 +3574,9 @@ struct PgNotify<T> {
 #[derive(Deserialize)]
 pub struct WsQuery {
     token: Option<String>,
+    /// `frames`: the client shows SVG slides as JPEGs from `presenter.frame`, so its
+    /// `presenter.state` messages leave each slide's SVG out (`svgOmitted: true`).
+    presenter: Option<String>,
 }
 
 pub async fn ws_handler(State(state): State<AppState>, req: Request) -> Response {
@@ -3485,6 +3611,7 @@ pub async fn ws_handler(State(state): State<AppState>, req: Request) -> Response
 
     let current_token = state.auth_token.read().await.clone();
     let is_authenticated = query.token.as_deref() == Some(current_token.as_str());
+    let presenter_frames = query.presenter.as_deref() == Some("frames");
 
     let ws = match WebSocketUpgrade::from_request_parts(&mut parts, &state).await {
         Ok(ws) => ws,
@@ -3499,7 +3626,14 @@ pub async fn ws_handler(State(state): State<AppState>, req: Request) -> Response
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
     ws.on_upgrade(move |socket| {
-        handle_socket(socket, state, server_id, user_agent, is_authenticated)
+        handle_socket(
+            socket,
+            state,
+            server_id,
+            user_agent,
+            is_authenticated,
+            presenter_frames,
+        )
     })
 }
 
@@ -3508,6 +3642,7 @@ const READONLY_ALLOWED: &[&str] = &[
     "presenter.register",
     "presenter.status",
     "presenter.frame",
+    "presenter.ack",
     "order.status",
     "pong",
 ];
@@ -3518,9 +3653,10 @@ async fn handle_socket(
     server_id: String,
     user_agent: Option<String>,
     is_authenticated: bool,
+    presenter_frames: bool,
 ) {
     let client_id = Uuid::new_v4();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let (tx, mut rx) = ClientTx::channel(presenter_frames);
 
     {
         let mut clients = state.ws_clients.write().await;
@@ -3607,10 +3743,7 @@ async fn handle_socket(
         tx.send(Message::Text(settings_msg.into())).log_gone();
         let status_msg = make_presentation_status(&state).await;
         tx.send(Message::Text(status_msg.into())).log_gone();
-        let presenter_msg =
-            json!({ "type": "presenter.state", "state": &*state.presenter_state.read().await })
-                .to_string();
-        tx.send(Message::Text(presenter_msg.into())).log_gone();
+        send_presenter_state(&tx, &*state.presenter_state.read().await, false);
         let order_msg = order::position_message(&state).await;
         tx.send(Message::Text(order_msg.into())).log_gone();
     }
@@ -3684,16 +3817,47 @@ async fn handle_socket(
 
     let (mut ws_sink, mut ws_stream) = socket.split();
 
+    let writer_state = state.clone();
+    let writer_tx = tx.clone();
     let send_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            let msg = match msg {
+        let mut pending = std::collections::VecDeque::new();
+        while let Some((item, dropped)) = ws_client::next(&mut rx, &mut pending).await {
+            let msg = match item.message {
                 Message::Text(text) if super::redact::enabled() => {
                     Message::Text(super::redact::apply(&text).into_owned().into())
                 }
                 other => other,
             };
+            let bytes = match &msg {
+                Message::Text(text) => text.len(),
+                Message::Binary(data) => data.len(),
+                _ => 0,
+            };
+            let started = std::time::Instant::now();
             if ws_sink.send(msg).await.is_err() {
                 break;
+            }
+            if item.kind == OutgoingKind::Other {
+                continue;
+            }
+            let written_at = std::time::Instant::now();
+            writer_tx.set_delivered(ws_client::Delivered {
+                queued_at: item.queued_at,
+                written_at,
+            });
+            if writer_state.presenter_delivery_log.load(Ordering::Relaxed) {
+                let client = client_name(&writer_state, client_id).await;
+                tracing::info!(
+                    target: "presenter_delivery",
+                    client,
+                    %client_id,
+                    kind = ?item.kind,
+                    bytes,
+                    queued_ms = started.duration_since(item.queued_at).as_millis() as u64,
+                    write_ms = written_at.duration_since(started).as_millis() as u64,
+                    dropped,
+                    "presenter message sent"
+                );
             }
         }
     });
@@ -3756,7 +3920,7 @@ async fn handle_socket(
 
 pub async fn start_notify_listener(
     connection_url: String,
-    ws_clients: Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    ws_clients: Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     app_state: AppState,
 ) {
     let (client, mut connection) =
@@ -3862,7 +4026,7 @@ pub async fn broadcast_clients_updated(state: &AppState) {
 }
 
 /// Spawned, so a slow recorder doesn't hold up the client's other commands.
-fn press_recorders(state: &AppState, client_tx: &mpsc::UnboundedSender<Message>, recording: bool) {
+fn press_recorders(state: &AppState, client_tx: &ClientTx, recording: bool) {
     let state = state.clone();
     let client_tx = client_tx.clone();
     tokio::spawn(async move {
@@ -3870,21 +4034,62 @@ fn press_recorders(state: &AppState, client_tx: &mpsc::UnboundedSender<Message>,
     });
 }
 
-/// Broadcast a `presenter.state` message to all WebSocket clients.
+/// `label (hostname)` of a connected client, for the delivery log.
+async fn client_name(state: &AppState, client_id: Uuid) -> String {
+    match state.ws_client_info.read().await.get(&client_id) {
+        Some(WsClientInfo {
+            label,
+            hostname: Some(hostname),
+            ..
+        }) => format!("{label} ({hostname})"),
+        Some(info) => info.label.clone(),
+        None => "gone".to_string(),
+    }
+}
+
+/// The `presenter.state` message, with each SVG slide's `svg` left empty when `svg_omitted`.
+fn presenter_state_message(state: &presenter::PresenterState, svg_omitted: bool) -> String {
+    let light;
+    let state = if svg_omitted && !state.svg_slides.is_empty() {
+        light = state.without_svg();
+        &light
+    } else {
+        state
+    };
+    json!({ "type": "presenter.state", "state": state, "svgOmitted": svg_omitted }).to_string()
+}
+
+/// Queues the presenter state for one client: without the SVGs for a client that draws them
+/// from `presenter.frame`, unless it asked for them.
+fn send_presenter_state(tx: &ClientTx, state: &presenter::PresenterState, svg: bool) {
+    let msg = presenter_state_message(state, tx.presenter_frames() && !svg);
+    tx.send_kind(Message::Text(msg.into()), OutgoingKind::PresenterState)
+        .log_gone();
+}
+
+/// Broadcast a `presenter.state` message to all WebSocket clients. Clients connected with
+/// `/ws?presenter=frames` get it without the SVGs. A newer state replaces one still queued.
 pub async fn broadcast_presenter_state(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     state: &presenter::PresenterState,
 ) {
-    let msg = json!({ "type": "presenter.state", "state": state }).to_string();
+    let mut full: Option<axum::extract::ws::Utf8Bytes> = None;
+    let mut light: Option<axum::extract::ws::Utf8Bytes> = None;
     let guard = clients.read().await;
     for tx in guard.values() {
-        tx.send(Message::Text(msg.clone().into())).log_gone();
+        let svg_omitted = tx.presenter_frames();
+        let slot = if svg_omitted { &mut light } else { &mut full };
+        let msg = slot
+            .get_or_insert_with(|| presenter_state_message(state, svg_omitted).into())
+            .clone();
+        tx.send_kind(Message::Text(msg), OutgoingKind::PresenterState)
+            .log_gone();
     }
 }
 
 /// Broadcast a `presenter.slide_changed` message to all WebSocket clients.
 pub async fn broadcast_presenter_slide_changed(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     state: &presenter::PresenterState,
 ) {
     let msg = json!({
@@ -3895,14 +4100,16 @@ pub async fn broadcast_presenter_slide_changed(
     .to_string();
     let guard = clients.read().await;
     for tx in guard.values() {
-        tx.send(Message::Text(msg.clone().into())).log_gone();
+        tx.send_kind(
+            Message::Text(msg.clone().into()),
+            OutgoingKind::PresenterSlide,
+        )
+        .log_gone();
     }
 }
 
 /// Broadcast a `ppt.folders_changed` message when PPT folders are added/removed.
-pub async fn broadcast_ppt_folders_changed(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
-) {
+pub async fn broadcast_ppt_folders_changed(clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>) {
     let msg = json!({ "type": "ppt.folders_changed" }).to_string();
     let guard = clients.read().await;
     for tx in guard.values() {
@@ -3912,7 +4119,7 @@ pub async fn broadcast_ppt_folders_changed(
 
 /// Broadcast a `recording.detected` message when OBS stops recording.
 pub async fn broadcast_recording_detected(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     file_name: &str,
     event_title: Option<&str>,
 ) {
@@ -3930,7 +4137,7 @@ pub async fn broadcast_recording_detected(
 
 /// Broadcast a `recording.untracked.removed` message when an untracked recording is assigned.
 pub async fn broadcast_untracked_removed(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     untracked_id: Uuid,
 ) {
     let msg = json!({
@@ -4009,7 +4216,7 @@ pub fn spawn_scheduling_tasks(event: Event, state: AppState) {
 
 /// Broadcast `upload.progress` to all connected WebSocket clients.
 pub async fn broadcast_upload_progress(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     recording_id: Uuid,
     platform: &str,
     progress_bytes: i64,
@@ -4031,7 +4238,7 @@ pub async fn broadcast_upload_progress(
 
 /// Broadcast `upload.completed` to all connected WebSocket clients.
 pub async fn broadcast_upload_completed(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     recording_id: Uuid,
     platform: &str,
     video_id: &str,
@@ -4053,7 +4260,7 @@ pub async fn broadcast_upload_completed(
 
 /// Broadcast `upload.failed` to all connected WebSocket clients.
 pub async fn broadcast_upload_failed(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     recording_id: Uuid,
     platform: &str,
     error: &str,
@@ -4073,7 +4280,7 @@ pub async fn broadcast_upload_failed(
 
 /// Broadcast `media.render.progress` to all connected WebSocket clients.
 pub async fn broadcast_media_render_progress(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     progress: &metocast_core::media::RenderProgress,
 ) {
     let msg = json!({
@@ -4089,7 +4296,7 @@ pub async fn broadcast_media_render_progress(
 
 /// Broadcast `media.audio.progress` to all connected WebSocket clients.
 pub async fn broadcast_media_audio_progress(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     progress: &metocast_core::media::AudioProgress,
 ) {
     let msg = json!({
@@ -4105,7 +4312,7 @@ pub async fn broadcast_media_audio_progress(
 
 /// Broadcast `media.program.progress` to all connected WebSocket clients.
 pub async fn broadcast_media_program_progress(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     progress: &metocast_core::media::ProgramProgress,
 ) {
     let msg = json!({
@@ -4121,7 +4328,7 @@ pub async fn broadcast_media_program_progress(
 
 /// Broadcast `upload.paused` to all connected WebSocket clients.
 pub async fn broadcast_upload_paused(
-    clients: &Arc<RwLock<HashMap<Uuid, mpsc::UnboundedSender<Message>>>>,
+    clients: &Arc<RwLock<HashMap<Uuid, ClientTx>>>,
     recording_id: Uuid,
     reason: &str,
 ) {

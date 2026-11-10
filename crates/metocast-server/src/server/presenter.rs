@@ -525,6 +525,33 @@ impl PresenterState {
         }
     }
 
+    /// The same state with each SVG slide's `svg` left empty, for a screen that gets its slides
+    /// drawn as JPEGs (`presenter.frame`): the SVGs carry the deck's photos and are most of the
+    /// message.
+    pub fn without_svg(&self) -> Self {
+        Self {
+            loaded: self.loaded,
+            file_path: self.file_path.clone(),
+            current_slide: self.current_slide,
+            total_slides: self.total_slides,
+            render_mode: self.render_mode,
+            slides: self.slides.clone(),
+            svg_slides: self
+                .svg_slides
+                .iter()
+                .map(|slide| SvgSlideContent {
+                    index: slide.index,
+                    svg: String::new(),
+                    width_px: slide.width_px,
+                    height_px: slide.height_px,
+                })
+                .collect(),
+            muted: self.muted,
+            slide_width_emu: self.slide_width_emu,
+            slide_height_emu: self.slide_height_emu,
+        }
+    }
+
     pub fn from_parsed(parsed: ParsedPresentation) -> Self {
         let total = parsed.total_slides;
         Self {

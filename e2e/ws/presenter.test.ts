@@ -28,6 +28,26 @@ describe.skipIf(!isLive)('Presenter WebSocket Commands', () => {
     expect(msg['state']).toHaveProperty('renderMode');
     expect(Array.isArray((msg['state'] as { svgSlides: unknown[] }).svgSlides)).toBe(true);
     expect(Array.isArray((msg['state'] as { slides: unknown[] }).slides)).toBe(true);
+    expect(msg['svgOmitted']).toBe(false);
+  });
+
+  it('a presenter=frames client gets the state without SVGs unless it asks for them', async () => {
+    const frames = new WsTestClient('presenter=frames');
+    try {
+      await frames.waitForConnect();
+      // The state pushed on connect, light too; consumed so the replies below line up.
+      const pushed = await frames.waitForMessage('presenter.state');
+      expect(pushed['svgOmitted']).toBe(true);
+      const light = await frames.command({ type: 'presenter.status' }, 'presenter.state');
+      expect(light['svgOmitted']).toBe(true);
+      const svgSlides = (light['state'] as { svgSlides: { svg: string }[] }).svgSlides;
+      expect(svgSlides.every((slide) => slide.svg === '')).toBe(true);
+
+      const full = await frames.command({ type: 'presenter.status', svg: true }, 'presenter.state');
+      expect(full['svgOmitted']).toBe(false);
+    } finally {
+      frames.close();
+    }
   });
 
   it('presentation.set_presenter_theme updates the shared presenter design', async () => {
