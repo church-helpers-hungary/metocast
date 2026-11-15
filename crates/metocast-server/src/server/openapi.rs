@@ -1282,7 +1282,7 @@ fn handwritten() -> Value {
                 "CleanupStatus": { "type": "string", "enum": ["none", "running", "succeeded", "failed"] },
                 "StoredTranscript": {
                     "type": "object",
-                    "required": ["id", "eventId", "eventTitle", "startedAt", "endedAt", "status", "live", "durationSeconds", "segmentCount", "cleanupStatus", "cleanupError"],
+                    "required": ["id", "eventId", "eventTitle", "startedAt", "endedAt", "status", "live", "durationSeconds", "segmentCount", "cleanupStatus", "cleanupError", "captionsDelivered", "captionsFailed", "captionLastError", "captionStreamId"],
                     "properties": {
                         "id": { "type": "string", "format": "uuid" },
                         "eventId": { "type": ["string", "null"], "format": "uuid" },
@@ -1294,7 +1294,11 @@ fn handwritten() -> Value {
                         "durationSeconds": { "type": "number" },
                         "segmentCount": { "type": "integer" },
                         "cleanupStatus": { "$ref": "#/components/schemas/CleanupStatus" },
-                        "cleanupError": { "type": ["string", "null"] }
+                        "cleanupError": { "type": ["string", "null"] },
+                        "captionsDelivered": { "type": "integer", "description": "Live captions YouTube accepted in this session" },
+                        "captionsFailed": { "type": "integer", "description": "Live captions that failed, were dropped as too old, or had no ingestion URL" },
+                        "captionLastError": { "type": ["string", "null"], "description": "Why the latest failed caption was not delivered", "example": "HTTP 403 Forbidden: " },
+                        "captionStreamId": { "type": ["string", "null"], "description": "The YouTube stream the captions were last posted to; null for a pasted ingestion URL" }
                     }
                 },
                 "StoredSegment": {

@@ -69,6 +69,13 @@ export const StoredTranscriptSchema = z.object({
   segmentCount: z.number().int(),
   cleanupStatus: CleanupStatusSchema,
   cleanupError: z.string().nullable(),
+  /** Live captions YouTube accepted, and those that failed or were dropped. */
+  captionsDelivered: z.number().int(),
+  captionsFailed: z.number().int(),
+  /** Why the latest failed caption was not delivered. */
+  captionLastError: z.string().nullable(),
+  /** The YouTube stream the captions were last posted to; null for a pasted ingestion URL. */
+  captionStreamId: z.string().nullable(),
 });
 
 export const StoredSegmentSchema = TranscriptSegmentSchema.extend({

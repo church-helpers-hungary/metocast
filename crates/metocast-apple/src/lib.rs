@@ -345,6 +345,13 @@ pub struct StoredTranscriptRecord {
     /// `none`, `running`, `succeeded` or `failed`.
     pub cleanup_status: String,
     pub cleanup_error: Option<String>,
+    /// Live captions YouTube accepted, and those that failed or were dropped.
+    pub captions_delivered: u32,
+    pub captions_failed: u32,
+    /// Why the latest failed caption was not delivered.
+    pub caption_last_error: Option<String>,
+    /// The YouTube stream the captions were last posted to.
+    pub caption_stream_id: Option<String>,
 }
 
 /// One line of a stored transcript.
@@ -3038,6 +3045,10 @@ impl From<StoredTranscript> for StoredTranscriptRecord {
             live: t.live,
             cleanup_status: t.cleanup_status.as_str().to_string(),
             cleanup_error: t.cleanup_error,
+            captions_delivered: t.captions_delivered,
+            captions_failed: t.captions_failed,
+            caption_last_error: t.caption_last_error,
+            caption_stream_id: t.caption_stream_id,
         }
     }
 }

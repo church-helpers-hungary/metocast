@@ -29,6 +29,29 @@ Only the English text is kept. The Hungarian source is never transcribed, so it 
 
 The session that is live now cannot be deleted or cleaned up until it stops.
 
+## Live caption delivery
+
+When **Live YouTube captions** is on, each finished sentence is also posted to the YouTube
+broadcast as an HTTP-POST caption. Every session keeps a record of what happened to those posts:
+
+- **Delivered** and **failed** counts. A caption counts as failed when YouTube refused it after
+  three tries, when it was over a minute old, or when no caption ingestion URL was found.
+- The **last error**, such as `HTTP 403 Forbidden: …`.
+- The **stream** the captions were posted to (`captionStreamId`). It is empty when the ingestion
+  URL was pasted in the OpenAI settings.
+
+The captions go to the stream bound to the event's YouTube broadcast (`liveBroadcasts` →
+`boundStreamId` → that stream's `closedCaptionsIngestionUrl`). A broadcast is bound when it goes
+live, and the transcript usually starts before that, so until then the channel's first stream is
+used and the lookup is repeated at most every 30 s, when a caption is due. A session with no event
+always uses the channel's first stream. The signed ingestion URL is never stored or logged.
+
+The Apple app and Sanctum show the record under the transcript's summary, for example "YouTube
+captions: 779 delivered, 0 failed · stream …", and the last error in red when any failed. It is
+on `GET /api/transcripts` and `GET /api/transcripts/{id}` (and the `transcripts_list` and
+`transcripts_get` MCP tools) as `captionsDelivered`, `captionsFailed`, `captionLastError` and
+`captionStreamId`.
+
 ## AI clean-up
 
 A live translation comes out sentence by sentence, so it has broken words, repeated fragments and

@@ -20,8 +20,8 @@ use axum::extract::ws::Message;
 use chrono::{DateTime, TimeDelta, Utc};
 use metocast_core::connectors::{ConnectorConfig as _, ConnectorStatus};
 use metocast_core::transcription::{
-    CreditStatus, LiveCaptionStatus, OPENAI_CONFIG_KEY, OpenAiConfig, TranscriptSegment,
-    TranscriptionState, TranscriptionStatus,
+    CreditStatus, OPENAI_CONFIG_KEY, OpenAiConfig, TranscriptSegment, TranscriptionState,
+    TranscriptionStatus,
 };
 use metocast_transcription::framer::FRAME_MS;
 use metocast_transcription::realtime::{self, RealtimeConfig, RealtimeEvent};
@@ -33,10 +33,9 @@ use tokio::sync::{Notify, mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::connectors::rodecaster::RodecasterConnector;
-use crate::connectors::youtube;
 use crate::database::settings;
 use audio::FrameResult;
-use youtube_captions::Caption;
+use youtube_captions::{Caption, Target};
 
 type WsClients = Arc<tokio::sync::RwLock<HashMap<Uuid, crate::server::ws_client::ClientTx>>>;
 
@@ -94,6 +93,7 @@ pub struct TranscriptionService {
 /// One running session's fixed facts.
 struct Session {
     id: Uuid,
+    event_id: Option<Uuid>,
     started_at: DateTime<Utc>,
     config: OpenAiConfig,
     realtime: RealtimeConfig,
@@ -285,6 +285,7 @@ impl TranscriptionService {
         realtime.source_transcription_model = None; // the Hungarian text is never shown
         let session = Session {
             id,
+            event_id,
             started_at,
             config,
             realtime,
@@ -631,7 +632,8 @@ impl TranscriptionService {
         }
     }
 
-    /// The YouTube caption sender, when live captions are on and an ingestion URL is known.
+    /// The YouTube caption sender, when live captions are on. It posts to the pasted ingestion
+    /// URL, or to the stream bound to the event's YouTube broadcast.
     async fn live_captions(
         self: &Arc<Self>,
         session: &Session,
@@ -639,32 +641,19 @@ impl TranscriptionService {
         if !session.config.youtube_live_captions {
             return None;
         }
-        let mut url = session.config.caption_ingestion_url.trim().to_string();
-        if url.is_empty()
-            && let Some(token) = youtube::load_tokens(&self.pool).await
-        {
-            match youtube::caption_ingestion_url(&token.access_token).await {
-                Ok(Some(found)) => url = found,
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!("transcription: cannot read the caption ingestion URL: {e}")
-                }
+        let url = session.config.caption_ingestion_url.trim();
+        let target = if url.is_empty() {
+            Target::Youtube {
+                broadcast_id: self.broadcast_id(session.event_id).await,
             }
-        }
-        if url.is_empty() {
-            let failed = LiveCaptionStatus {
-                ok: false,
-                last_seq: 0,
-                last_error: Some("No caption ingestion URL: set the broadcast to HTTP captions or paste the URL in the OpenAI settings".to_string()),
-            };
-            self.update_state(|s| s.youtube = Some(failed)).await;
-            return None;
-        }
+        } else {
+            Target::Url(url.to_string())
+        };
         let service = Arc::clone(self);
         Some(youtube_captions::spawn(
             self.pool.clone(),
             session.id,
-            url,
+            target,
             move |status| {
                 let service = Arc::clone(&service);
                 tokio::spawn(async move {
@@ -672,6 +661,22 @@ impl TranscriptionService {
                 });
             },
         ))
+    }
+
+    /// The YouTube broadcast scheduled for `event_id`, if there is one.
+    async fn broadcast_id(&self, event_id: Option<Uuid>) -> Option<String> {
+        let event_id = event_id?;
+        sqlx::query_scalar(
+            "SELECT external_id FROM event_connections \
+             WHERE event_id = $1 AND platform = 'youtube' AND external_id <> ''",
+        )
+        .bind(event_id)
+        .fetch_optional(&self.pool)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("transcription: cannot read the event's YouTube broadcast: {e}");
+            None
+        })
     }
 }
 

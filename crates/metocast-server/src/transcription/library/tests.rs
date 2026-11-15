@@ -25,6 +25,10 @@ fn transcript() -> TranscriptDetail {
             segment_count: 3,
             cleanup_status: CleanupStatus::Succeeded,
             cleanup_error: None,
+            captions_delivered: 0,
+            captions_failed: 0,
+            caption_last_error: None,
+            caption_stream_id: None,
         },
         segments: vec![
             segment(
@@ -111,8 +115,10 @@ async fn a_stored_session_lists_reads_cleans_and_deletes() {
     .await
     .unwrap();
     let id: Uuid = sqlx::query_scalar(
-        "INSERT INTO transcript_sessions (event_id, started_at, ended_at, status) \
-         VALUES ($1, '2026-10-18T09:30:00Z', '2026-10-18T09:31:30Z', 'stopped') RETURNING id",
+        "INSERT INTO transcript_sessions (event_id, started_at, ended_at, status, \
+         captions_delivered, captions_failed, caption_last_error, caption_stream_id) \
+         VALUES ($1, '2026-10-18T09:30:00Z', '2026-10-18T09:31:30Z', 'stopped', \
+         40, 2, 'HTTP 403 Forbidden', 'stream-b') RETURNING id",
     )
     .bind(event)
     .fetch_one(&pool)
@@ -135,6 +141,15 @@ async fn a_stored_session_lists_reads_cleans_and_deletes() {
     assert_eq!(listed[0].duration_seconds, 90.0);
     assert_eq!(listed[0].segment_count, 2);
     assert_eq!(listed[0].cleanup_status, CleanupStatus::None);
+    assert_eq!(
+        (listed[0].captions_delivered, listed[0].captions_failed),
+        (40, 2)
+    );
+    assert_eq!(
+        listed[0].caption_last_error.as_deref(),
+        Some("HTTP 403 Forbidden")
+    );
+    assert_eq!(listed[0].caption_stream_id.as_deref(), Some("stream-b"));
     assert!(
         list(&pool, None, Some(id))
             .await
