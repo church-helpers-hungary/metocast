@@ -201,6 +201,19 @@
   {:else if t.cleanupStatus === 'none' && !t.live}
     <p class="meta">{$_('transcripts.cleanupHint')}</p>
   {/if}
+  {#if t.captionsDelivered + t.captionsFailed > 0}
+    <p class="meta">
+      {$_('transcripts.captions', {
+        values: { delivered: t.captionsDelivered, failed: t.captionsFailed },
+      })}{#if t.captionStreamId}
+        · {$_('transcripts.captionStream', { values: { stream: t.captionStreamId } })}{/if}
+    </p>
+    {#if t.captionsFailed > 0 && t.captionLastError}
+      <p class="meta error">
+        {$_('transcripts.captionError', { values: { error: t.captionLastError } })}
+      </p>
+    {/if}
+  {/if}
   <div class="surface">
     {#each lines as line (line.seq)}
       <p>{line.text}</p>

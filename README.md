@@ -535,8 +535,11 @@ the RØDECaster source.
 - **Viewers:** open `/transcript` on any phone (no login; it is read-only, and follows the system
   light or dark appearance). `/transcript?overlay=1` is a transparent two-line source for OBS.
 - **YouTube live captions:** with **Live YouTube captions** on, new broadcasts use HTTP-POST captions
-  and each line is posted to the stream's caption ingestion URL, timed to the speech. The URL is
-  read from YouTube, or pasted as an override.
+  and each line is posted to the caption ingestion URL of the stream bound to the event's
+  broadcast, timed to the speech. Until the broadcast is bound (it is bound when it goes live), the
+  channel's first stream is used and the lookup is repeated every 30 s. A pasted URL overrides
+  the lookup. Each transcript records how many captions were delivered and failed, the last error
+  and the stream used, shown in the stored transcript.
 - **Final video:** with **Caption finished uploads** on, or `POST /api/recordings/{id}/captions`,
   the exported file is played to the model at 1×. Cue starts are snapped to speech onsets, and the
   WebVTT is uploaded as the "English" track (`captions` job queue). Download it from

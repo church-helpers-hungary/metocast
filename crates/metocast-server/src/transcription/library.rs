@@ -54,6 +54,10 @@ struct SummaryRow {
     status: String,
     cleanup_status: String,
     cleanup_error: Option<String>,
+    captions_delivered: i32,
+    captions_failed: i32,
+    caption_last_error: Option<String>,
+    caption_stream_id: Option<String>,
     segment_count: i64,
     last_at: Option<DateTime<Utc>>,
 }
@@ -64,6 +68,7 @@ type SegmentRow = (i32, DateTime<Utc>, DateTime<Utc>, String, Option<String>);
 const SUMMARY_SQL: &str = "\
 SELECT s.id, s.event_id, NULLIF(COALESCE(NULLIF(e.computed_title, ''), e.title), '') AS event_title, \
        s.started_at, s.ended_at, s.status, s.cleanup_status, s.cleanup_error, \
+       s.captions_delivered, s.captions_failed, s.caption_last_error, s.caption_stream_id, \
        COUNT(g.seq) AS segment_count, MAX(g.ended_at) AS last_at \
 FROM transcript_sessions s \
 LEFT JOIN events e ON e.id = s.event_id \
@@ -86,6 +91,10 @@ fn summary(row: SummaryRow, live: Option<Uuid>) -> StoredTranscript {
         segment_count: u32::try_from(row.segment_count).unwrap_or(u32::MAX),
         cleanup_status: CleanupStatus::parse(&row.cleanup_status),
         cleanup_error: row.cleanup_error,
+        captions_delivered: u32::try_from(row.captions_delivered).unwrap_or_default(),
+        captions_failed: u32::try_from(row.captions_failed).unwrap_or_default(),
+        caption_last_error: row.caption_last_error,
+        caption_stream_id: row.caption_stream_id,
     }
 }
 

@@ -892,25 +892,77 @@ impl Ingestion {
     }
 }
 
-/// The stream's signed `closedCaptionsIngestionUrl`, if YouTube reports one.
-pub async fn caption_ingestion_url(access_token: &str) -> anyhow::Result<Option<String>> {
-    let response = reqwest::Client::new()
-        .get("https://www.googleapis.com/youtube/v3/liveStreams")
-        .query(&[("part", "contentDetails"), ("mine", "true")])
-        .bearer_auth(access_token)
-        .send()
-        .await?;
-    if !response.status().is_success() {
-        anyhow::bail!("youtube_api_{}", response.status());
-    }
-    let list: serde_json::Value = response.json().await?;
-    Ok(list["items"]
+/// Where live captions go: a stream's signed `closedCaptionsIngestionUrl` (never log it) and the
+/// stream's id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CaptionIngestion {
+    pub url: String,
+    pub stream_id: String,
+    /// The stream bound to the event's broadcast, rather than the channel's first stream.
+    pub bound: bool,
+}
+
+/// The caption ingestion of the stream bound to `broadcast_id`, or of the channel's first stream
+/// when there is no broadcast or it is not bound yet (`go_live` binds it). 2 quota units.
+pub async fn caption_ingestion(
+    access_token: &str,
+    broadcast_id: Option<&str>,
+) -> anyhow::Result<Option<CaptionIngestion>> {
+    let client = reqwest::Client::new();
+    let bound = match broadcast_id {
+        Some(id) => bound_stream_id(
+            &youtube_call(
+                client
+                    .get(BROADCASTS)
+                    .query(&[("part", "contentDetails"), ("id", id)])
+                    .bearer_auth(access_token),
+            )
+            .await?,
+        ),
+        None => None,
+    };
+    let filter = match &bound {
+        Some(id) => ("id", id.as_str()),
+        None => ("mine", "true"),
+    };
+    let streams = youtube_call(
+        client
+            .get(STREAMS)
+            .query(&[("part", "contentDetails"), filter])
+            .bearer_auth(access_token),
+    )
+    .await?;
+    Ok(pick_caption_stream(&streams, bound.as_deref()))
+}
+
+/// `contentDetails.boundStreamId` of the first broadcast in a `liveBroadcasts.list` reply.
+fn bound_stream_id(broadcasts: &serde_json::Value) -> Option<String> {
+    broadcasts["items"][0]["contentDetails"]["boundStreamId"]
+        .as_str()
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+}
+
+/// From a `liveStreams.list` reply: the `bound` stream, or else the first one with a caption URL.
+fn pick_caption_stream(
+    streams: &serde_json::Value,
+    bound: Option<&str>,
+) -> Option<CaptionIngestion> {
+    streams["items"]
         .as_array()
         .into_iter()
         .flatten()
-        .find_map(|item| item["contentDetails"]["closedCaptionsIngestionUrl"].as_str())
-        .filter(|url| !url.is_empty())
-        .map(str::to_string))
+        .filter(|item| bound.is_none_or(|id| item["id"].as_str() == Some(id)))
+        .find_map(|item| {
+            let url = item["contentDetails"]["closedCaptionsIngestionUrl"]
+                .as_str()
+                .filter(|url| !url.is_empty())?;
+            Some(CaptionIngestion {
+                url: url.to_string(),
+                stream_id: item["id"].as_str().unwrap_or_default().to_string(),
+                bound: bound.is_some(),
+            })
+        })
 }
 
 /// Uploads a WebVTT track in `language` (ISO 639-1) on `video_id`, replacing `existing` when it
@@ -1034,6 +1086,7 @@ pub async fn live_stream_ingestion(access_token: &str) -> anyhow::Result<Ingesti
 // ── Going live and ending ────────────────────────────────────────────────────
 
 const BROADCASTS: &str = "https://www.googleapis.com/youtube/v3/liveBroadcasts";
+const STREAMS: &str = "https://www.googleapis.com/youtube/v3/liveStreams";
 
 /// Sends a YouTube Data API request and returns its JSON body. An error carries YouTube's reason
 /// code (`errorStreamInactive`, `redundantTransition`, …) so callers can match on it.
@@ -1191,4 +1244,48 @@ pub async fn go_live(broadcast_id: &str, access_token: &str) -> anyhow::Result<(
 /// Ends a live broadcast. It can't be restarted afterwards.
 pub async fn end_broadcast(broadcast_id: &str, access_token: &str) -> anyhow::Result<()> {
     transition(broadcast_id, "complete", access_token).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn captions_go_to_the_stream_bound_to_the_broadcast() {
+        let broadcasts = json!({ "items": [{ "id": "gIGntP_kidc",
+            "contentDetails": { "boundStreamId": "stream-b" } }] });
+        let streams = json!({ "items": [
+            { "id": "stream-a", "contentDetails": { "closedCaptionsIngestionUrl": "https://a?cid=1" } },
+            { "id": "stream-b", "contentDetails": { "closedCaptionsIngestionUrl": "https://b?cid=2" } },
+        ] });
+        let bound = bound_stream_id(&broadcasts);
+        assert_eq!(bound.as_deref(), Some("stream-b"));
+        assert_eq!(
+            pick_caption_stream(&streams, bound.as_deref()),
+            Some(CaptionIngestion {
+                url: "https://b?cid=2".to_string(),
+                stream_id: "stream-b".to_string(),
+                bound: true,
+            })
+        );
+    }
+
+    #[test]
+    fn an_unbound_broadcast_falls_back_to_the_first_stream_with_captions() {
+        let unbound =
+            json!({ "items": [{ "id": "x", "contentDetails": { "boundStreamId": "" } }] });
+        assert_eq!(bound_stream_id(&unbound), None);
+        assert_eq!(bound_stream_id(&json!({ "items": [] })), None);
+        let streams = json!({ "items": [
+            { "id": "rtmp-only", "contentDetails": {} },
+            { "id": "stream-a", "contentDetails": { "closedCaptionsIngestionUrl": "https://a?cid=1" } },
+        ] });
+        let picked = pick_caption_stream(&streams, None).unwrap();
+        assert_eq!(
+            (picked.stream_id.as_str(), picked.bound),
+            ("stream-a", false)
+        );
+        assert_eq!(pick_caption_stream(&streams, Some("gone")), None);
+    }
 }

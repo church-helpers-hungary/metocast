@@ -4496,6 +4496,16 @@
         }
       }
     },
+    "Last caption error: %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Utolsó feliratküldési hiba: %@"
+          }
+        }
+      }
+    },
     "Last run %@%@" : {
       "localizations" : {
         "en" : {
@@ -10066,6 +10076,16 @@
         }
       }
     },
+    "YouTube captions: %u delivered, %u failed" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "YouTube-feliratok: %1$u elküldve, %2$u sikertelen"
+          }
+        }
+      }
+    },
     "YouTube didn't get the stream ready in time. Try again." : {
       "localizations" : {
         "hu" : {
@@ -10342,6 +10362,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "az eszközön állt le."
+          }
+        }
+      }
+    },
+    "stream %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "stream: %@"
           }
         }
       }

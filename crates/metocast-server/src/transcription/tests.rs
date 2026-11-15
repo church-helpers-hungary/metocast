@@ -76,6 +76,7 @@ fn test_session(url: String) -> Session {
     realtime.drain_idle = Duration::from_millis(200);
     Session {
         id: Uuid::new_v4(),
+        event_id: None,
         started_at: Utc::now(),
         config: OpenAiConfig::default(),
         realtime,

@@ -170,6 +170,13 @@ pub struct StoredTranscript {
     pub segment_count: u32,
     pub cleanup_status: CleanupStatus,
     pub cleanup_error: Option<String>,
+    /// Live captions YouTube accepted, and those that failed or were dropped, in this session.
+    pub captions_delivered: u32,
+    pub captions_failed: u32,
+    /// Why the latest failed caption was not delivered.
+    pub caption_last_error: Option<String>,
+    /// The YouTube stream the captions were last posted to; `None` for a pasted ingestion URL.
+    pub caption_stream_id: Option<String>,
 }
 
 /// One committed line of a stored transcript, with its cleaned-up text when there is one.

@@ -77,6 +77,12 @@ private struct TranscriptDetailView: View {
                     if let cleanup = cleanupLine(detail.transcript) {
                         Text(cleanup).foregroundStyle(detail.transcript.cleanupStatus == "failed" ? .red : .secondary)
                     }
+                    if let captions = detail.transcript.captionsLine {
+                        Text(captions).foregroundStyle(detail.transcript.captionsFailed > 0 ? .orange : .secondary)
+                    }
+                    if detail.transcript.captionsFailed > 0, let error = detail.transcript.captionLastError {
+                        Text("Last caption error: \(error)").foregroundStyle(.red).textSelection(.enabled)
+                    }
                 }
                 Section {
                     ForEach(lines(detail), id: \.seq) { line in
@@ -232,5 +238,13 @@ private extension StoredTranscriptRecord {
         if live { parts.append(String(localized: "live now")) }
         if cleanupStatus == "succeeded" { parts.append(String(localized: "cleaned up")) }
         return parts.joined(separator: " · ")
+    }
+
+    /// How many live YouTube captions went out, and to which stream; nil when none were sent.
+    var captionsLine: String? {
+        guard captionsDelivered + captionsFailed > 0 else { return nil }
+        let counts = String(localized: "YouTube captions: \(captionsDelivered) delivered, \(captionsFailed) failed")
+        guard let captionStreamId else { return counts }
+        return counts + " · " + String(localized: "stream \(captionStreamId)")
     }
 }
