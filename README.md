@@ -537,7 +537,8 @@ the RØDECaster source.
 - **YouTube live captions:** with **Live YouTube captions** on, new broadcasts use HTTP-POST captions
   and each line is posted to the caption ingestion URL of the stream bound to the event's
   broadcast, timed to the speech. Until the broadcast is bound (it is bound when it goes live), the
-  channel's first stream is used and the lookup is repeated every 30 s. A pasted URL overrides
+  channel's first stream is used and the lookup (broadcast included) is repeated every 30 s. When no
+  stream takes HTTP captions, captions count as failed rather than going elsewhere. A pasted URL overrides
   the lookup. Each transcript records how many captions were delivered and failed, the last error
   and the stream used, shown in the stored transcript.
 - **Final video:** with **Caption finished uploads** on, or `POST /api/recordings/{id}/captions`,

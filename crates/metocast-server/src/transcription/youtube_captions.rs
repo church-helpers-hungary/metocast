@@ -30,9 +30,9 @@ pub struct Caption {
 pub enum Target {
     /// The ingestion URL the operator pasted in the OpenAI settings.
     Url(String),
-    /// Looked up on YouTube: the stream bound to this broadcast, or the channel's first stream
-    /// while there is no broadcast or it is not bound yet.
-    Youtube { broadcast_id: Option<String> },
+    /// Looked up on YouTube: the stream bound to this event's broadcast, or the channel's first
+    /// stream while the event has no broadcast or it is not bound yet.
+    Youtube { event_id: Option<Uuid> },
 }
 
 /// Where captions are posted right now, and whether that can still change.
@@ -135,7 +135,7 @@ async fn refresh(
     destination: &mut Option<Destination>,
     looked_up: &mut Option<Instant>,
 ) {
-    let Target::Youtube { broadcast_id } = target else {
+    let Target::Youtube { event_id } = target else {
         return;
     };
     if destination.as_ref().is_some_and(|d| d.settled)
@@ -147,6 +147,11 @@ async fn refresh(
     let Some(token) = youtube::load_tokens(pool).await else {
         return;
     };
+    // Read again on every lookup: the broadcast is often scheduled after the transcript starts.
+    let broadcast_id = match event_id {
+        Some(id) => broadcast_id(pool, *id).await,
+        None => None,
+    };
     match youtube::caption_ingestion(&token.access_token, broadcast_id.as_deref()).await {
         Ok(Some(found)) => {
             if found.bound {
@@ -155,13 +160,30 @@ async fn refresh(
             *destination = Some(Destination {
                 url: found.url,
                 stream_id: Some(found.stream_id),
-                // Without a broadcast the channel's first stream is all there is to find.
-                settled: found.bound || broadcast_id.is_none(),
+                // Without an event the channel's first stream is all there is to find.
+                settled: found.bound || event_id.is_none(),
             });
         }
-        Ok(None) => {}
+        // No stream takes HTTP captions (the bound one included): post nowhere, so each caption
+        // fails with `NO_URL`, rather than to a stream the broadcast does not use.
+        Ok(None) => *destination = None,
         Err(e) => tracing::warn!("transcription: cannot read the caption ingestion URL: {e}"),
     }
+}
+
+/// The YouTube broadcast scheduled for `event_id`, if there is one.
+async fn broadcast_id(pool: &PgPool, event_id: Uuid) -> Option<String> {
+    sqlx::query_scalar(
+        "SELECT external_id FROM event_connections \
+         WHERE event_id = $1 AND platform = 'youtube' AND external_id <> ''",
+    )
+    .bind(event_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!("transcription: cannot read the event's YouTube broadcast: {e}");
+        None
+    })
 }
 
 /// Posts one caption, retrying a failed POST twice while it is under a minute old.

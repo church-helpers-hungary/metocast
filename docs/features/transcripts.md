@@ -43,8 +43,12 @@ broadcast as an HTTP-POST caption. Every session keeps a record of what happened
 The captions go to the stream bound to the event's YouTube broadcast (`liveBroadcasts` →
 `boundStreamId` → that stream's `closedCaptionsIngestionUrl`). A broadcast is bound when it goes
 live, and the transcript usually starts before that, so until then the channel's first stream is
-used and the lookup is repeated at most every 30 s, when a caption is due. A session with no event
-always uses the channel's first stream. The signed ingestion URL is never stored or logged.
+used and the lookup is repeated at most every 30 s, when a caption is due. Each lookup reads the
+event's broadcast again, so a broadcast scheduled after the transcript started is still found. If
+no stream takes HTTP captions, the bound one included, nothing is posted and each caption counts
+as failed with "No caption ingestion URL" until the broadcast is set to HTTP captions. A session
+with no event always uses the channel's first stream. The signed ingestion URL is never stored or
+logged.
 
 The Apple app and Sanctum show the record under the transcript's summary, for example "YouTube
 captions: 779 delivered, 0 failed · stream …", and the last error in red when any failed. It is
