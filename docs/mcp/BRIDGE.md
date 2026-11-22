@@ -34,9 +34,10 @@ Metocast has to have been opened once on the Mac: every time the app starts it p
 `~/Library/Application Support/Metocast/mcp/metocast-mcp` at its own helper, and both routes use that
 path, so they keep working when the app moves or updates.
 
-Metocast is not notarized yet, so macOS asks you to approve it the first time it opens (System
-Settings, Privacy & Security, **Open Anyway**). Do that for Metocast itself; Claude then starts the
-helper from inside an app you have already approved.
+A notarized release ([releasing the Mac app](../features/install-mac.md)) opens without asking. A
+build that is not notarized (CI's ad-hoc zip, or your own) makes macOS ask you to approve it the
+first time it opens (System Settings, Privacy & Security, **Open Anyway**). Do that for Metocast
+itself; Claude then starts the helper from inside an app you have already approved.
 
 ## How it behaves
 

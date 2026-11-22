@@ -64,8 +64,9 @@ any other client. Client devices connect by address and token, or by opening the
 `metocast://connect` link that the Mac's Settings shows as a QR code. Every screen that hands out an address shows
 both the LAN IP link and the `.local` one, each copyable; see
 [web presenter and network links](docs/features/web-presenter-links.md).
-To put the app on an iPhone or iPad (TestFlight, or Xcode for a quick try), see
-[installing on iPhone and iPad](docs/features/install-iphone-ipad.md).
+To put the app on an iPhone or iPad (App Store, TestFlight, or Xcode for a quick try), see
+[installing on iPhone and iPad](docs/features/install-iphone-ipad.md); for a notarized Mac
+download, see [releasing the Mac app](docs/features/install-mac.md).
 
 ```bash
 ./scripts/build-apple.sh   # once, and after Rust bridge changes: the app links this XCFramework
@@ -106,7 +107,8 @@ adopt the first camera when unconfigured; Broadlink discovery saves devices in t
 so its panel shows saved devices and provides a refresh button.
 
 Building the server needs `cmake` (`brew install cmake`). The Mac app is not sandboxed, because
-the server spawns PostgreSQL and listens on the network.
+the server spawns PostgreSQL and listens on the network, so it ships as a notarized Developer ID
+download rather than through the Mac App Store.
 
 Every Mac build embeds `braw-decode`, so the app can develop `.braw` clips. A Mac with Blackmagic
 RAW installed compiles it; anything else, GitHub's runners included, uses the committed
