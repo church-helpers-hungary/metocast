@@ -461,10 +461,15 @@ struct LiveOrderSection: View {
     let session: MetocastSession
     let event: EventSummaryRecord
     @State private var items: [OrderItemRecord] = []
+    @State private var isLoaded = false
 
     var body: some View {
         Section {
-            if items.isEmpty {
+            // A row either way: an empty section never appears, so its task would never load.
+            if !isLoaded {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+            } else if items.isEmpty {
                 Text("\(event.title) has no Order of Service yet. Add one on the event's page.")
                     .foregroundStyle(.secondary)
             }
@@ -510,6 +515,7 @@ struct LiveOrderSection: View {
         }
         .task(id: "\(event.id)-\(session.orderRevision)") {
             items = (try? await session.order(eventId: event.id)) ?? items
+            isLoaded = true
         }
     }
 
