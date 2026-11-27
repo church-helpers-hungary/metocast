@@ -103,8 +103,10 @@ camera and local network, and the export-compliance answer. The rest is filled i
 Connect → the app:
 
 1. **App Information:** name, subtitle, category (Productivity), and the **Privacy Policy URL**,
-   which is required. A short page is enough. It says that the app sends data only to the church's
-   own Metocast server and that the developer collects nothing.
+   which is required: [`docs/privacy.md`](../privacy.md) on GitHub
+   (`https://github.com/church-helpers-hungary/metocast/blob/master/docs/privacy.md`). It says
+   that the app sends data only to the church's own Metocast server and that the developer
+   collects nothing.
 2. **App Privacy:** answer **Data Not Collected**. That matches the manifest. The server belongs to
    the user, not the developer, so Apple doesn't count what the app sends there as collection.
 3. **Pricing and Availability:** price (Free) and countries.
