@@ -1,0 +1,129 @@
+name: TestFlight
+
+# Each app release tag uploads the iPhone and iPad app to App Store Connect, where TestFlight's
+# automatic distribution hands it to the internal testers. Run it by hand to upload the newest tag.
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  testflight:
+    name: Upload the iOS app to TestFlight
+    # Pinned like the app job in rust-libraries.yml: an image roll must not change the SDK.
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          # The version comes from the newest v* tag when this runs by hand.
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+          shared-key: apple-libraries
+
+      - name: Build the bridge
+        run: ./scripts/build-apple.sh
+
+      # The team's own Apple Distribution certificate: with it in the keychain, Xcode signs with it
+      # rather than a cloud-managed one. For a team name with an accented letter, Apple's cloud
+      # signing writes the designated requirement in another Unicode form than the certificate,
+      # and App Store Connect rejects the upload (FB24633162). Signed here, codesign builds the
+      # requirement from the certificate itself.
+      - name: Import the signing certificate and the API key
+        env:
+          CERTIFICATE_P12: ${{ secrets.APPSTORE_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPSTORE_CERTIFICATE_PASSWORD }}
+          API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          API_KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APPSTORE_API_ISSUER_ID }}
+        run: |
+          for name in CERTIFICATE_P12 CERTIFICATE_PASSWORD API_KEY API_KEY_ID API_ISSUER_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::the secret APPSTORE_$name is not set; see docs/features/install-iphone-ipad.md"
+              exit 1
+            fi
+          done
+
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(openssl rand -hex 24)
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          printf '%s' "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain"
+          # Put it first in the search list, keeping the runner's own keychains after it.
+          keychains=("$keychain")
+          while IFS= read -r line; do
+            line="${line#"${line%%[![:space:]]*}"}"
+            keychains+=("${line//\"/}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${keychains[@]}"
+
+          # xcodebuild and altool both read the key from here.
+          keys="$RUNNER_TEMP/private_keys"
+          mkdir -p "$keys"
+          printf '%s\n' "$API_KEY" > "$keys/AuthKey_$API_KEY_ID.p8"
+          {
+            echo "API_PRIVATE_KEYS_DIR=$keys"
+            echo "API_KEY_PATH=$keys/AuthKey_$API_KEY_ID.p8"
+            echo "API_KEY_ID=$API_KEY_ID"
+            echo "API_ISSUER_ID=$API_ISSUER_ID"
+          } >> "$GITHUB_ENV"
+
+      # Automatic signing, as on a Mac: the API key lets Xcode fetch the App Store profile.
+      - name: Archive
+        run: |
+          tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*')
+          xcodebuild -project apple-app/Metocast.xcodeproj -scheme Metocast -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath target/Metocast-iOS.xcarchive \
+            MARKETING_VERSION="${tag#v}" CURRENT_PROJECT_VERSION="$(date -u +%Y%m%d.%H%M)" \
+            -allowProvisioningUpdates -authenticationKeyPath "$API_KEY_PATH" \
+            -authenticationKeyID "$API_KEY_ID" -authenticationKeyIssuerID "$API_ISSUER_ID" archive
+
+      # Exported here and uploaded after the check below, so only a checked build is sent.
+      - name: Export
+        run: |
+          plutil -replace destination -string export -o "$RUNNER_TEMP/ExportOptions.plist" \
+            apple-app/ExportOptions.plist
+          xcodebuild -exportArchive -archivePath target/Metocast-iOS.xcarchive \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath target/Metocast-iOS-export \
+            -allowProvisioningUpdates -authenticationKeyPath "$API_KEY_PATH" \
+            -authenticationKeyID "$API_KEY_ID" -authenticationKeyIssuerID "$API_ISSUER_ID"
+
+      # The check App Store Connect runs: an app that fails its own designated requirement is
+      # rejected as an invalid signature, so it is never uploaded.
+      - name: Check the signature
+        run: |
+          unpacked="$RUNNER_TEMP/ipa"
+          ditto -x -k target/Metocast-iOS-export/Metocast.ipa "$unpacked"
+          codesign --verify --deep --strict --verbose=2 "$unpacked/Payload/Metocast.app"
+          codesign -dvv "$unpacked/Payload/Metocast.app" 2>&1 | grep '^Authority=Apple Distribution'
+
+      - name: Upload to App Store Connect
+        run: |
+          xcrun altool --upload-app -f target/Metocast-iOS-export/Metocast.ipa -t ios \
+            --api-key "$API_KEY_ID" --api-issuer "$API_ISSUER_ID"
+
+      - name: Remove the signing keychain
+        if: always()
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          if [ -f "$keychain" ]; then
+            security delete-keychain "$keychain"
+          fi
