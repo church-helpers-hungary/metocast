@@ -644,7 +644,7 @@ impl TranscriptionService {
         let url = session.config.caption_ingestion_url.trim();
         let target = if url.is_empty() {
             Target::Youtube {
-                broadcast_id: self.broadcast_id(session.event_id).await,
+                event_id: session.event_id,
             }
         } else {
             Target::Url(url.to_string())
@@ -661,22 +661,6 @@ impl TranscriptionService {
                 });
             },
         ))
-    }
-
-    /// The YouTube broadcast scheduled for `event_id`, if there is one.
-    async fn broadcast_id(&self, event_id: Option<Uuid>) -> Option<String> {
-        let event_id = event_id?;
-        sqlx::query_scalar(
-            "SELECT external_id FROM event_connections \
-             WHERE event_id = $1 AND platform = 'youtube' AND external_id <> ''",
-        )
-        .bind(event_id)
-        .fetch_optional(&self.pool)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::warn!("transcription: cannot read the event's YouTube broadcast: {e}");
-            None
-        })
     }
 }
 
