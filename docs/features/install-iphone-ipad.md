@@ -67,6 +67,32 @@ After a few minutes of processing the build shows in TestFlight on each tester's
 **Install** (or turn on automatic updates in TestFlight). The app declares that it uses no
 non-exempt encryption, so no export-compliance question holds the build back.
 
+### From GitHub Actions, on every release tag
+
+[`.github/workflows/testflight.yml`](../../.github/workflows/testflight.yml) does the same for each
+`v*` tag, and for the newest tag when run by hand (Actions → TestFlight → Run workflow). It builds
+the bridge, archives and exports with automatic signing (an App Store Connect API key stands in for
+the Xcode account), and uploads with the same key. It uploads nothing unless
+`codesign --verify --strict` passes and the signer is an Apple Distribution certificate. Turn on
+**automatic distribution** for the TestFlight internal group, and each upload reaches the testers'
+devices by itself.
+
+It imports the team's own Apple Distribution certificate, so Xcode signs with it and not with a
+cloud-managed one. That is also why Xcode Cloud can't do this for an accented team name: it only
+signs in the cloud (see the note above; Apple tracks it as FB24633162). Set these repository
+secrets once (Settings → Secrets and variables → Actions):
+
+| Secret | What it holds | How to make it |
+| --- | --- | --- |
+| `APPSTORE_CERTIFICATE_P12` | the Apple Distribution certificate with its private key, base64 | Keychain Access → My Certificates → *Apple Distribution: …* → Export as `.p12` with a password, then `base64 -i cert.p12 \| pbcopy` |
+| `APPSTORE_CERTIFICATE_PASSWORD` | that `.p12`'s password | |
+| `APPSTORE_API_KEY` | the API key's `.p8` file, as text | App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys → **+**, access *Admin* (automatic signing creates the App Store profile) → Download (only once), then `pbcopy < AuthKey_XXXX.p8` |
+| `APPSTORE_API_KEY_ID` | the key's ID | the Key ID column |
+| `APPSTORE_API_ISSUER_ID` | the team's issuer ID | above the keys table |
+
+When the certificate is replaced (it expires after a year, or after a team rename the old one is
+revoked), export the new one and update the first two secrets.
+
 ## App Store release
 
 The App Store uses the same archive and upload as TestFlight above. After you test a build on
